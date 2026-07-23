@@ -55,7 +55,7 @@ def render() -> None:
     df_turns = pd.DataFrame([t.__dict__ for t in result.turns]) if result.turns else pd.DataFrame()
     df_tools = _build_tools_df(result)
 
-    tabs = ["总览", "Token 趋势", "工具执行", "对话时序", "成本分析", "原始数据"]
+    tabs = ["总览", "Token 趋势", "工具执行",  "成本分析", "原始数据"]
     if is_transcript:
         tabs.insert(2, "时间轴")   # extra tab only available with real timestamps
 
@@ -498,26 +498,6 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
     st.divider()
     st.subheader("工具效率汇总")
     tool_efficiency_table(df_tools)
-
-
-# ── Tab 5: Sequence diagram ────────────────────────────────────
-
-def _tab_sequence(result: ParseResult) -> None:
-    st.subheader("对话时序图")
-    max_ev, theme, row_h = mermaid_controls(key_prefix="cc_seq")
-    is_transcript = result.parse_debug.get("format") == "transcript"
-    key_types     = {"system", "assistant", "user", "result", "tool_result"} \
-                    if is_transcript else {"system", "assistant", "user", "result"}
-    key_events    = [e for e in result.raw_events if e.get("type") in key_types]
-    sampled       = sample_events(key_events, max_ev)
-    if not sampled:
-        st.warning("未找到可渲染的关键事件")
-        return
-    src = _build_mermaid(sampled, is_transcript=is_transcript)
-    render_mermaid(src, theme=theme, row_height=row_h, event_count=len(sampled))
-    with st.expander("复制 Mermaid 源码"):
-        st.code(src, language="text")
-
 
 # ── Tab 6: Cost analysis ───────────────────────────────────────
 
