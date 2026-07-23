@@ -55,7 +55,7 @@ def render() -> None:
     df_turns = pd.DataFrame([t.__dict__ for t in result.turns]) if result.turns else pd.DataFrame()
     df_tools = _build_tools_df(result)
 
-    tabs = ["总览", "Token 趋势", "工具执行",  "成本分析", "原始数据"]
+    tabs = ["Token 趋势", "工具执行",  "成本分析", "原始数据"]
     if is_transcript:
         tabs.insert(2, "时间轴")   # extra tab only available with real timestamps
 
@@ -282,49 +282,6 @@ def _build_timeline_df(result: ParseResult) -> pd.DataFrame:
                     })
 
     return pd.DataFrame(rows)
-
-
-# ── Tab 1: Overview ────────────────────────────────────────────
-
-def _tab_overview(result: ParseResult, df_tools: pd.DataFrame) -> None:
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.subheader("工具调用分布")
-        if not df_tools.empty:
-            tc = df_tools["name"].value_counts().reset_index()
-            tc.columns = ["工具名称", "次数"]
-            fig = px.pie(tc, names="工具名称", values="次数", hole=0.4,
-                         color_discrete_sequence=SAFE_PALETTE)
-            fig.update_traces(textinfo="label+percent+value")
-            fig.update_layout(showlegend=False, margin=dict(t=0, b=0))
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("暂无工具调用")
-
-    # with col_r:
-    #     st.subheader("每轮 Stop Reason 分布")
-    #     if result.turns:
-    #         counts: dict[str, int] = {}
-    #         for t in result.turns:
-    #             k = t.stop_reason or "unknown"
-    #             counts[k] = counts.get(k, 0) + 1
-    #         sr_df = pd.DataFrame({"原因": list(counts), "次数": list(counts.values())})
-    #         fig2  = px.bar(sr_df, x="原因", y="次数", color="原因", text="次数",
-    #                        color_discrete_sequence=SAFE_PALETTE)
-    #         fig2.update_traces(textposition="outside")
-    #         fig2.update_layout(showlegend=False, height=300, margin=dict(t=10, b=0))
-    #         st.plotly_chart(fig2, use_container_width=True)
-
-    if result.session_info.tools_available:
-        st.subheader("本次会话可用工具")
-        cols = st.columns(min(5, max(1, len(result.session_info.tools_available))))
-        for i, t in enumerate(result.session_info.tools_available):
-            cols[i % len(cols)].code(t)
-
-    if result.result_info.result_text:
-        st.subheader("最终结果摘要")
-        text = result.result_info.result_text
-        st.info(text[:600] + ("…" if len(text) > 600 else ""))
 
 
 # ── Tab 2: Token trends ────────────────────────────────────────
