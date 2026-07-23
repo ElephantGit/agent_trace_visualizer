@@ -301,19 +301,19 @@ def _tab_overview(result: ParseResult, df_tools: pd.DataFrame) -> None:
         else:
             st.info("暂无工具调用")
 
-    with col_r:
-        st.subheader("每轮 Stop Reason 分布")
-        if result.turns:
-            counts: dict[str, int] = {}
-            for t in result.turns:
-                k = t.stop_reason or "unknown"
-                counts[k] = counts.get(k, 0) + 1
-            sr_df = pd.DataFrame({"原因": list(counts), "次数": list(counts.values())})
-            fig2  = px.bar(sr_df, x="原因", y="次数", color="原因", text="次数",
-                           color_discrete_sequence=SAFE_PALETTE)
-            fig2.update_traces(textposition="outside")
-            fig2.update_layout(showlegend=False, height=300, margin=dict(t=10, b=0))
-            st.plotly_chart(fig2, use_container_width=True)
+    # with col_r:
+    #     st.subheader("每轮 Stop Reason 分布")
+    #     if result.turns:
+    #         counts: dict[str, int] = {}
+    #         for t in result.turns:
+    #             k = t.stop_reason or "unknown"
+    #             counts[k] = counts.get(k, 0) + 1
+    #         sr_df = pd.DataFrame({"原因": list(counts), "次数": list(counts.values())})
+    #         fig2  = px.bar(sr_df, x="原因", y="次数", color="原因", text="次数",
+    #                        color_discrete_sequence=SAFE_PALETTE)
+    #         fig2.update_traces(textposition="outside")
+    #         fig2.update_layout(showlegend=False, height=300, margin=dict(t=10, b=0))
+    #         st.plotly_chart(fig2, use_container_width=True)
 
     if result.session_info.tools_available:
         st.subheader("本次会话可用工具")
