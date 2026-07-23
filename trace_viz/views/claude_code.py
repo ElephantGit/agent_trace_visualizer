@@ -67,7 +67,6 @@ def render() -> None:
     if is_transcript:
         with tab_objects[idx]: _tab_timeline(result);              idx += 1
     with tab_objects[idx]: _tab_tools(df_tools);                   idx += 1
-    with tab_objects[idx]: _tab_sequence(result);                  idx += 1
     with tab_objects[idx]: _tab_cost(result, df_turns);            idx += 1
     with tab_objects[idx]: _tab_raw(result);                       idx += 1
 
