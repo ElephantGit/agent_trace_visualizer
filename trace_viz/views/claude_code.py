@@ -57,7 +57,7 @@ def render() -> None:
 
     tabs = ["Token 趋势", "工具执行",  "成本分析", "原始数据"]
     if is_transcript:
-        tabs.insert(2, "时间轴")   # extra tab only available with real timestamps
+        tabs.insert(1, "时间轴")   # extra tab only available with real timestamps
 
     tab_objects = st.tabs(tabs)
     idx = 0
@@ -371,52 +371,6 @@ def _tab_timeline(result: ParseResult) -> None:
         st.plotly_chart(fig_lat, use_container_width=True)
     else:
         st.info("轮次过少，无法计算延迟")
-
-    st.divider()
-
-    # ── Tool call durations from real timestamps ───────────────
-    st.subheader("工具调用耗时（真实时间戳计算）")
-    tool_dur_rows = []
-    for tc in result.tool_calls:
-        if tc.duration_ms > 0:
-            tool_dur_rows.append({
-                "工具名称":   tc.name,
-                "Turn":      tc.turn_no,
-                "调用序号":  tc.call_idx + 1,
-                "耗时(ms)":  tc.duration_ms,
-            })
-    if tool_dur_rows:
-        df_dur = pd.DataFrame(tool_dur_rows)
-        tool_color = {
-            t: SAFE_PALETTE[i % len(SAFE_PALETTE)]
-            for i, t in enumerate(df_dur["工具名称"].unique())
-        }
-        fig_dur = go.Figure()
-        for tn, grp in df_dur.groupby("工具名称"):
-            fig_dur.add_trace(go.Bar(
-                x=grp["调用序号"], y=grp["耗时(ms)"],
-                name=tn, marker_color=tool_color[tn],
-                hovertemplate=f"工具: {tn}<br>耗时: %{{y:.0f}} ms<extra></extra>",
-            ))
-        fig_dur.update_layout(
-            barmode="overlay", height=300, margin=dict(t=10, b=0),
-            xaxis_title="第 N 次调用", yaxis_title="耗时 (ms)",
-            legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
-        )
-        st.plotly_chart(fig_dur, use_container_width=True)
-
-        # Summary table
-        dur_stat = (
-            df_dur.groupby("工具名称")["耗时(ms)"]
-            .agg(调用次数="count", 平均ms="mean", 最大ms="max", 总计ms="sum")
-            .reset_index()
-            .rename(columns={"工具名称": "工具"})
-        )
-        for col in ("平均ms", "最大ms", "总计ms"):
-            dur_stat[col] = dur_stat[col].apply(lambda x: f"{x:.0f}")
-        st.dataframe(dur_stat, hide_index=True, use_container_width=True)
-    else:
-        st.info("未能从时间戳计算工具耗时（可能 tool_result 缺少 timestamp）")
 
     st.divider()
 
