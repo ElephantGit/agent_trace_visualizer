@@ -1,0 +1,298 @@
+"""Shared UI components used across Opencode, Gemini, and Claude Code views."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+import streamlit.components.v1 as components
+
+from trace_viz.config import MERMAID_CDN, MAX_MERMAID_EVENTS, PAGE_SIZE, SAFE_PALETTE
+from trace_viz.models import ParseResult
+from trace_viz.utils import mermaid_quote, sanitize_mermaid, to_str
+
+
+# ── Mermaid renderer ───────────────────────────────────────────
+
+def render_mermaid(
+    mermaid_src: str,
+    *,
+    theme: str = "default",
+    row_height: int = 32,
+    event_count: int = 0,
+) -> None:
+    """Render a Mermaid sequence diagram inside an auto-sized iframe."""
+    height = max(400, event_count * row_height * 2 + 200)
+    html = (
+        "<!DOCTYPE html><html><head>"
+        f"<script src='{MERMAID_CDN}'></script>"
+        "<style>body{margin:0;padding:8px;background:transparent}"
+        ".mermaid svg{max-width:100%!important;height:auto!important}</style>"
+        "</head><body><div class='mermaid'>\n"
+        + mermaid_src
+        + f"\n</div><script>mermaid.initialize({{startOnLoad:true,theme:'{theme}',"
+        "sequence:{mirrorActors:false,messageAlign:'left',wrap:true,width:200}"
+        "});</script></body></html>"
+    )
+    components.html(html, height=height, scrolling=True)
+
+
+def mermaid_controls(*, key_prefix: str) -> tuple[int, str, int]:
+    """Render the standard mermaid control row; return (max_events, theme, row_height)."""
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1:
+        max_ev = st.slider("最大事件数", 10, 120, MAX_MERMAID_EVENTS, 5, key=f"{key_prefix}_max")
+    with c2:
+        theme = st.selectbox("主题", ["default", "forest", "neutral", "dark"], key=f"{key_prefix}_theme")
+    with c3:
+        row_h = st.slider("行高(px)", 20, 60, 30, 4, key=f"{key_prefix}_rowh")
+    return max_ev, theme, row_h  # type: ignore[return-value]
+
+
+def sample_events(events: list[Any], max_n: int, *, seed: int = 42) -> list[Any]:
+    """Return at most max_n events, keeping first & last, sampling the middle."""
+    if len(events) <= max_n:
+        return events
+    import random
+    rng = random.Random(seed)
+    middle = list(range(1, len(events) - 1))
+    rng.shuffle(middle)
+    chosen = sorted(middle[: max_n - 2])
+    sampled = [events[0]] + [events[i] for i in chosen] + [events[-1]]
+    st.info(f"共 {len(events)} 个事件，已采样显示 {len(sampled)} 个")
+    return sampled
+
+
+# ── Common chart builders ──────────────────────────────────────
+
+def token_trend_fig(
+    df: pd.DataFrame,
+    *,
+    x_col: str = "turn_no",
+    input_col: str = "input_tokens",
+    output_col: str = "output_tokens",
+    cache_read_col: str = "cache_read",
+    cache_creation_col: str = "cache_creation",
+    reasoning_col: str | None = None,
+) -> go.Figure:
+    """Build the standard token trend figure.
+
+    All y-columns are displayed as-is (no implicit cumsum).  Callers that
+    hold per-step deltas (Opencode) should pre-cumsum those columns before
+    passing them in.
+    """
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df[x_col], y=df[input_col],
+        mode="lines+markers", name="Input（窗口大小）",
+        line=dict(color="#1a73e8", width=2), marker=dict(size=8),
+        fill="tozeroy", fillcolor="rgba(26,115,232,0.08)",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df[x_col], y=df[output_col],
+        mode="lines+markers", name="Output",
+        line=dict(color="#34a853", width=2), marker=dict(size=8),
+    ))
+    if cache_read_col in df.columns and df[cache_read_col].sum() > 0:
+        fig.add_trace(go.Scatter(
+            x=df[x_col], y=df[cache_read_col],
+            mode="lines+markers", name="Cache Read",
+            line=dict(color="#14b8a6", width=2, dash="dot"), marker=dict(size=6),
+        ))
+    if cache_creation_col in df.columns and df[cache_creation_col].sum() > 0:
+        fig.add_trace(go.Scatter(
+            x=df[x_col], y=df[cache_creation_col],
+            mode="lines+markers", name="Cache Creation",
+            line=dict(color="#a855f7", width=2, dash="dot"), marker=dict(size=6),
+        ))
+    if reasoning_col and reasoning_col in df.columns and df[reasoning_col].sum() > 0:
+        fig.add_trace(go.Scatter(
+            x=df[x_col], y=df[reasoning_col].cumsum(),
+            mode="lines+markers", name="累计 Reasoning",
+            line=dict(color="#a855f7", width=2, dash="dot"), marker=dict(size=6),
+        ))
+    fig.update_layout(
+        height=380, hovermode="x unified",
+        xaxis_title="Turn", yaxis_title="Tokens",
+        margin=dict(t=10, b=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+
+
+def token_delta_fig(
+    df: pd.DataFrame,
+    *,
+    x_col: str = "turn_no",
+    input_col: str = "input_tokens",
+    output_col: str = "output_tokens",
+) -> go.Figure:
+    """Per-turn input delta and output bar chart."""
+    df = df.copy()
+    df["_input_delta"] = df[input_col].diff().fillna(df[input_col].iloc[0]).astype(int)
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df[x_col], y=df["_input_delta"], name="Input 增量", marker_color="#1a73e8"))
+    fig.add_trace(go.Bar(x=df[x_col], y=df[output_col],    name="Output",     marker_color="#34a853"))
+    fig.update_layout(
+        barmode="group", height=300,
+        xaxis_title="Turn", yaxis_title="Tokens",
+        margin=dict(t=10, b=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+
+
+def tool_tiktoken_fig(df_tools: pd.DataFrame) -> go.Figure:
+    """Per-call bar chart coloured by tool name, Y = tiktoken tokens."""
+    tool_color = {
+        t: SAFE_PALETTE[i % len(SAFE_PALETTE)]
+        for i, t in enumerate(df_tools["name"].unique())
+    }
+    fig = go.Figure()
+    for tool_name, grp in df_tools.groupby("name"):
+        fig.add_trace(go.Bar(
+            x=grp.index, y=grp["tiktoken_tokens"],
+            name=tool_name, marker_color=tool_color[tool_name],
+            hovertemplate=f"工具: {tool_name}<br>Tiktoken: %{{y:,}}<extra></extra>",
+        ))
+    mean_val = df_tools["tiktoken_tokens"].mean()
+    fig.add_hline(
+        y=mean_val, line_dash="dot", line_color="gray",
+        annotation_text=f"均值 {mean_val:.0f}", annotation_position="top right",
+    )
+    fig.update_layout(
+        barmode="overlay", height=320, margin=dict(t=20, b=0),
+        xaxis_title="第 N 次调用", yaxis_title="Tiktoken Tokens",
+        legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
+    )
+    return fig
+
+
+# ── Tool components ────────────────────────────────────────────
+
+def tool_efficiency_table(df_tools: pd.DataFrame) -> None:
+    """Grouped tool efficiency summary table.
+
+    Automatically includes duration_ms stats when the column is present
+    and non-zero, so both Opencode (which has duration) and Claude Code
+    (which doesn't) get the right columns without extra configuration.
+    """
+    agg: dict[str, Any] = {
+        "调用次数":         ("name",          "count"),
+        "总输出chars":      ("output_chars",   "sum"),
+        "均输出chars":      ("output_chars",   "mean"),
+        "总TiktokenTokens": ("tiktoken_tokens","sum"),
+        "均TiktokenTokens": ("tiktoken_tokens","mean"),
+        "错误次数":         ("is_error",       "sum"),
+    }
+    has_duration = (
+        "duration_ms" in df_tools.columns
+        and pd.to_numeric(df_tools["duration_ms"], errors="coerce").sum() > 0
+    )
+    if has_duration:
+        agg["平均耗时ms"] = ("duration_ms", "mean")
+        agg["最大耗时ms"] = ("duration_ms", "max")
+
+    eff = (
+        df_tools.groupby("name")
+        .agg(**agg)
+        .reset_index()
+        .rename(columns={"name": "工具"})
+    )
+    # Format numeric display columns
+    for col in ("均输出chars", "均TiktokenTokens"):
+        if col in eff.columns:
+            eff[col] = eff[col].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "—")
+    for col in ("总输出chars", "总TiktokenTokens"):
+        if col in eff.columns:
+            eff[col] = eff[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "—")
+    for col in ("平均耗时ms", "最大耗时ms"):
+        if col in eff.columns:
+            eff[col] = eff[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "—")
+
+    st.dataframe(eff, hide_index=True, use_container_width=True)
+
+
+def tool_inspector(df_tools: pd.DataFrame) -> None:
+    """Selectbox + 2-column detail view for a single tool call."""
+    if df_tools.empty:
+        return
+    selected = st.selectbox(
+        "选择一次工具调用进行深度审查：",
+        options=df_tools.to_dict(orient="records"),
+        format_func=lambda x: (
+            f"[Turn {x['turn_no']}] #{x['call_idx'] + 1}  {x['name']}  |  "
+            f"{'❌ 错误' if x['is_error'] else '✅'}  |  "
+            f"{x['tiktoken_tokens']:,} tokens"
+        ),
+    )
+    if not selected:
+        return
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.info(f"**Turn:** {selected['turn_no']}")
+        st.info(f"**Tiktoken Tokens:** {selected['tiktoken_tokens']:,}")
+        st.info(f"**输出大小:** {selected['output_chars']:,} chars")
+        st.info(f"**是否错误:** {'是 ❌' if selected['is_error'] else '否 ✅'}")
+        if selected.get("duration_ms"):
+            st.info(f"**耗时:** {selected['duration_ms']:.0f} ms")
+        raw_input = selected.get("_input_dict") or selected.get("input")
+        if raw_input:
+            st.subheader("入参（JSON）")
+            if isinstance(raw_input, str):
+                st.code(raw_input, language="json")
+            else:
+                st.code(json.dumps(raw_input, ensure_ascii=False, indent=2), language="json")
+    with c2:
+        st.subheader("工具返回内容")
+        st.text_area("", value=selected.get("output", ""), height=360, label_visibility="collapsed")
+
+
+# ── Generic raw-data tab ───────────────────────────────────────
+
+def raw_events_tab(
+    raw_events: list[dict],
+    *,
+    key_prefix: str,
+    type_field: str = "type",
+) -> None:
+    """Paginated raw event viewer with keyword search and NDJSON export.
+
+    Used by Claude Code view (which has no columnar DataFrame to show).
+    Opencode uses its own custom raw tab for the compact dataframe layout.
+    """
+    all_types = sorted({str(e.get(type_field, "")) for e in raw_events})
+    type_filter = st.multiselect(
+        "事件类型", all_types, default=all_types, key=f"{key_prefix}_types"
+    )
+    kw = st.text_input("关键词搜索", key=f"{key_prefix}_kw")
+
+    filtered = [e for e in raw_events if str(e.get(type_field, "")) in type_filter]
+    if kw:
+        filtered = [
+            e for e in filtered
+            if kw.lower() in json.dumps(e, ensure_ascii=False).lower()
+        ]
+
+    st.caption(f"匹配 {len(filtered):,} 条")
+
+    total_pages = max(1, (len(filtered) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = st.number_input("页码", 1, total_pages, 1, key=f"{key_prefix}_page")
+
+    for evt in filtered[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]:
+        label = str(evt.get(type_field, "?"))
+        with st.expander(label):
+            st.json(evt)
+
+    st.divider()
+    export = "\n".join(json.dumps(e, ensure_ascii=False) for e in filtered)
+    st.download_button(
+        "导出筛选结果 NDJSON",
+        export.encode("utf-8"),
+        f"{key_prefix}_filtered.ndjson",
+        "application/x-ndjson",
+    )
