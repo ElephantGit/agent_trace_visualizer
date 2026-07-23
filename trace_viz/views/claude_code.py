@@ -62,7 +62,6 @@ def render() -> None:
     tab_objects = st.tabs(tabs)
     idx = 0
 
-    with tab_objects[idx]: _tab_overview(result, df_tools);        idx += 1
     with tab_objects[idx]: _tab_tokens(df_turns);                  idx += 1
     if is_transcript:
         with tab_objects[idx]: _tab_timeline(result);              idx += 1
