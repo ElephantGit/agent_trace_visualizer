@@ -25,18 +25,59 @@ def render_mermaid(
     row_height: int = 32,
     event_count: int = 0,
 ) -> None:
-    """Render a Mermaid sequence diagram inside an auto-sized iframe."""
+    """Render a Mermaid sequence diagram inside an auto-sized iframe.
+
+    Mermaid's `startOnLoad`/`run` path renders into a transient detached container and
+    fails inside Streamlit's `components.html` iframe with "svg element not in render
+    tree", which Mermaid then masks as the generic "Syntax error in text" error svg.
+    We therefore disable `startOnLoad` and call the explicit `mermaid.render(id, src)`
+    API after the CDN has loaded, inserting the returned svg into a real, visible
+    container so the diagram is laid out against the live DOM.
+    """
     height = max(400, event_count * row_height * 2 + 200)
+    # The source is JSON-encoded into the script so quotes, newlines, and CJK in agent
+    # text cannot break out of the JS string literal — no manual escaping needed.
+    src_json = json.dumps(mermaid_src, ensure_ascii=False)
+    init_call = (
+        "mermaid.initialize({startOnLoad:false,theme:'"
+        + theme
+        + "',sequence:{mirrorActors:false,messageAlign:'left'}});"
+    )
+    # The first mermaid.render() inside Streamlit's components.html iframe fires before
+    # the iframe's layout has settled, so Mermaid's temporary svg measures against a
+    # not-yet-rendered tree and throws "svg element not in render tree" (which Mermaid
+    # masks as the generic "Syntax error in text" error svg). Retrying after a beat
+    # succeeds once the iframe is laid out. The loop re-renders until an svg appears.
+    render_loop = (
+        "function __mmd_render(){var src=window.__mmd_src,out=document.getElementById('mermaid-out');"
+        "var id='mmd-'+(window.__mmdTries||0);"
+        "mermaid.render(id,src).then(function(r){out.innerHTML=r.svg;}).catch(function(e){"
+        "window.__mmdTries=(window.__mmdTries||0)+1;"
+        # Streamlit's components.html iframe is resized/re-laid-out asynchronously after
+        # the srcdoc lands; the first several render attempts measure against an
+        # unfinished tree and throw "svg element not in render tree". Keep retrying with
+        # a fresh diagram id until the layout settles (up to ~10s).
+        "if(window.__mmdTries<20){window.__mmdPending=setTimeout(__mmd_render,500);out.textContent='';}"
+        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});}"
+    )
     html = (
         "<!DOCTYPE html><html><head>"
         f"<script src='{MERMAID_CDN}'></script>"
         "<style>body{margin:0;padding:8px;background:transparent}"
-        ".mermaid svg{max-width:100%!important;height:auto!important}</style>"
-        "</head><body><div class='mermaid'>\n"
-        + mermaid_src
-        + f"\n</div><script>mermaid.initialize({{startOnLoad:true,theme:'{theme}',"
-        "sequence:{mirrorActors:false,messageAlign:'left'}"
-        "});</script></body></html>"
+        ".mermaid{display:none}"  # raw source stays hidden; the rendered svg is shown below"
+        ".mermaid-out svg{max-width:100%!important;height:auto!important}</style>"
+        "</head><body>"
+        "<div class='mermaid'>\n" + mermaid_src + "\n</div>"
+        "<div class='mermaid-out' id='mermaid-out'></div>"
+        "<script>\n"
+        "window.__mmd_src=" + src_json + ";\n"
+        + init_call
+        + "\n" + render_loop + "\n"
+        # Wait for the iframe to finish laying out before the first attempt; the
+        # parser-blocking CDN has already loaded mermaid by here. A small delay plus
+        # the retry loop covers Streamlit's late iframe stabilization.
+        "window.addEventListener('load',function(){setTimeout(__mmd_render,300);});\n"
+        "</script></body></html>"
     )
     components.html(html, height=height, scrolling=True)
 
