@@ -54,6 +54,15 @@ def render_mermaid(
         "function __mmd_cleanup(){var b=document.body;"
         "Array.prototype.forEach.call(b.querySelectorAll(\"div[id^='dmermaid'],svg[id^='mmd-'],div.dmermaid\"),"
         "function(n){n.remove();});}\n"
+        # Mermaid 10 hard-codes actor lifeline y2=2000, so on a tall diagram (many
+        # notes/messages) the vertical lines stop ~halfway and the bottom half loses
+        # its column dividers. Extend every vertical lifeline (x1==x2) down to the
+        # full content height after the svg lands in the out container.
+        "function __mmd_extend(){var svg=document.getElementById('mermaid-out').querySelector('svg');"
+        "if(!svg)return;var vb=(svg.getAttribute('viewBox')||'').split(/\\s+/);var h=vb[3]?parseFloat(vb[3]):svg.getBoundingClientRect().height;"
+        "Array.prototype.forEach.call(svg.querySelectorAll('line'),function(l){"
+        "var x1=l.getAttribute('x1'),x2=l.getAttribute('x2');"
+        "if(x1!=null&&x2!=null&&x1===x2){l.setAttribute('y2',h);}});}\n"
         # The first mermaid.render() inside Streamlit's components.html iframe fires
         # before the iframe's layout has settled, so Mermaid's temporary svg measures
         # against a not-yet-rendered tree and throws "svg element not in render tree"
@@ -62,7 +71,7 @@ def render_mermaid(
         "function __mmd_render(){var src=window.__mmd_src,out=document.getElementById('mermaid-out');"
         "__mmd_cleanup();"
         "var id='mmd-'+(window.__mmdTries||0);"
-        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;})"
+        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();})"
         ".catch(function(e){__mmd_cleanup();"
         "window.__mmdTries=(window.__mmdTries||0)+1;"
         "if(window.__mmdTries<20){window.__mmdPending=setTimeout(__mmd_render,500);out.textContent='';}"
