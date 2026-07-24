@@ -38,14 +38,18 @@ _TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 
 
 def render() -> None:
-    """Top-level entry point called from app.py."""
-    st.header("Claude Code 运行过程可视化")
-    st.caption("支持交互式 terminal 会话记录（transcript JSONL）与 `-p` 模式的 stream-json 两种格式")
-
+    """Standalone entry point: picks a data source via the sidebar, then renders it."""
     result = _sidebar()
     if result is None:
         _show_quickstart()
         return
+    render_body(result)
+
+
+def render_body(result: ParseResult) -> None:
+    """Renders an already-parsed result, shared by the standalone and embedded flows."""
+    st.header("Claude Code 运行过程可视化")
+    st.caption("支持交互式 terminal 会话记录（transcript JSONL）与 `-p` 模式的 stream-json 两种格式")
 
     _sidebar_meta(result)
     _metrics_row(result)

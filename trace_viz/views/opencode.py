@@ -26,7 +26,7 @@ from trace_viz.views.shared import (
 
 
 def render() -> None:
-    """Top-level entry point called from app.py."""
+    """Standalone entry point: uploads a trace file via the sidebar, then renders it."""
     st.header("Opencode 运行过程可视化工具")
     st.caption("支持并发工具检测、真实 Token 趋势与物理权重分摊算法")
 
@@ -36,6 +36,18 @@ def render() -> None:
         return
 
     result = parse(uploaded.getvalue())
+    if not result.raw_events:
+        st.error("未解析到任何事件，请确认文件格式。")
+        return
+
+    render_body(result)
+
+
+def render_body(result: ParseResult) -> None:
+    """Renders an already-parsed result, shared by the standalone and embedded flows."""
+    st.header("Opencode 运行过程可视化工具")
+    st.caption("支持并发工具检测、真实 Token 趋势与物理权重分摊算法")
+
     if not result.raw_events:
         st.error("未解析到任何事件，请确认文件格式。")
         return

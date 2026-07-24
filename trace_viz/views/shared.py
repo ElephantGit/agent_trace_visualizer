@@ -35,7 +35,7 @@ def render_mermaid(
         "</head><body><div class='mermaid'>\n"
         + mermaid_src
         + f"\n</div><script>mermaid.initialize({{startOnLoad:true,theme:'{theme}',"
-        "sequence:{mirrorActors:false,messageAlign:'left',wrap:true,width:200}"
+        "sequence:{mirrorActors:false,messageAlign:'left'}"
         "});</script></body></html>"
     )
     components.html(html, height=height, scrolling=True)
