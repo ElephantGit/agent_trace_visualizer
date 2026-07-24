@@ -51,9 +51,17 @@ def render_mermaid(
         # body on every failed render() call. Without cleanup these accumulate under
         # the real diagram and show as stacked "Syntax error in text" svgs at the
         # bottom — the exact symptom the retry loop exists to avoid.
-        "function __mmd_cleanup(){var b=document.body;"
-        "Array.prototype.forEach.call(b.querySelectorAll(\"div[id^='dmermaid'],svg[id^='mmd-'],div.dmermaid\"),"
-        "function(n){n.remove();});}\n"
+        "function __mmd_cleanup(){var b=document.body,out=document.getElementById('mermaid-out');"
+        # Mermaid 10 leaves throwaway render artifacts in the body after each failed
+        # render() retry: orphan <svg> elements (with no id) and "dmmd-<id>" containers,
+        # each ~150px tall. They stack under #mermaid-out and inflate the body far past
+        # the real diagram, leaving a big blank gap below it before the controls. Only
+        # remove transients that are NOT inside #mermaid-out (the real diagram lives
+        # there and must survive).
+        "Array.prototype.forEach.call(b.children,function(n){"
+        "if(n===out)return;"
+        "var tn=(n.tagName||'').toUpperCase();"
+        "if(tn==='SVG'||/^dmmd/.test(n.id)||(n.className&&/dmermaid/.test(n.className))){n.remove();}});}\n"
         # Mermaid 10 hard-codes actor lifeline y2=2000, so on a tall diagram (many
         # notes/messages) the vertical lines stop ~halfway and the bottom half loses
         # its column dividers. Extend every vertical lifeline (x1==x2) down to the
@@ -71,11 +79,19 @@ def render_mermaid(
         "function __mmd_render(){var src=window.__mmd_src,out=document.getElementById('mermaid-out');"
         "__mmd_cleanup();"
         "var id='mmd-'+(window.__mmdTries||0);"
-        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();})"
+        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();__mmd_resize();})"
         ".catch(function(e){__mmd_cleanup();"
         "window.__mmdTries=(window.__mmdTries||0)+1;"
         "if(window.__mmdTries<20){window.__mmdPending=setTimeout(__mmd_render,500);out.textContent='';}"
-        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});}\n"
+        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});__mmd_resize();}\n"
+        # Streamlit's components.html iframe has a fixed height passed from Python
+        # (an event-count estimate) that is larger than the actual rendered svg on
+        # tall diagrams, leaving a big blank gap below the diagram before the
+        # "复制 Mermaid 源码" controls. Resize the iframe to the real content height
+        # after render so the diagram sits flush against the controls below.
+        # frameElement is the component iframe itself (same-origin with Streamlit).
+        "function __mmd_resize(){try{var fe=window.frameElement;if(!fe)return;"
+        "var h=document.body.scrollHeight;if(h>0)fe.style.height=(h+8)+'px';}catch(e){}}\n"
         # The parser-blocking CDN above has loaded mermaid by here; wait for the
         # iframe to finish laying out before the first attempt.
         "window.addEventListener('load',function(){setTimeout(__mmd_render,300);});\n"
