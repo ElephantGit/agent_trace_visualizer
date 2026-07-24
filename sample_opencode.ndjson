@@ -1,0 +1,19 @@
+{"type":"session.start","ts":1000,"sessionID":"demo-001","model":"claude-sonnet-4-5","title":"Demo Opencode session"}
+{"type":"text.user","ts":1100,"globalStep":0,"text":"请帮我读取 README 并总结"}
+{"type":"step.start","ts":1200,"globalStep":1}
+{"type":"tool.start","ts":1300,"globalStep":1,"toolCallId":"call_1","tool":"read_file"}
+{"type":"tool.finish","ts":1500,"globalStep":1,"toolCallId":"call_1","tool":"read_file","args":{"path":"README.md"},"output":"# Sample Project\nThis is a demo project for visualization.","outputSize":52,"isError":false,"duration":200}
+{"type":"step.finish","ts":1600,"globalStep":1,"reason":"tool_use","tokens":{"input":1200,"output":80,"cacheRead":0,"cacheWrite":0,"reasoning":10},"cumTokens":{"input":1200,"output":80}}
+{"type":"step.start","ts":1700,"globalStep":2}
+{"type":"text.assistant","ts":1800,"globalStep":2,"text":"这是一个示例项目，用于可视化展示。"}
+{"type":"step.finish","ts":1900,"globalStep":2,"reason":"end_turn","tokens":{"input":1280,"output":60,"cacheRead":200,"cacheWrite":100,"reasoning":0},"cumTokens":{"input":1280,"output":140}}
+{"type":"step.start","ts":2000,"globalStep":3}
+{"type":"tool.start","ts":2100,"globalStep":3,"toolCallId":"call_2","tool":"write_file"}
+{"type":"tool.start","ts":2150,"globalStep":3,"toolCallId":"call_3","tool":"bash"}
+{"type":"tool.finish","ts":2400,"globalStep":3,"toolCallId":"call_2","tool":"write_file","args":{"path":"SUMMARY.md","content":"# Summary"},"output":"Wrote 9 bytes to SUMMARY.md","outputSize":30,"isError":false,"duration":250}
+{"type":"tool.finish","ts":2500,"globalStep":3,"toolCallId":"call_3","tool":"bash","args":{"cmd":"ls -la"},"output":"total 8\ndrwxr-xr-x 2 user user 4096 .\n-rw-r--r-- 1 user user   12 SUMMARY.md","outputSize":60,"isError":false,"duration":350}
+{"type":"step.finish","ts":2600,"globalStep":3,"reason":"tool_use","tokens":{"input":1400,"output":120,"cacheRead":400,"cacheWrite":50,"reasoning":5},"cumTokens":{"input":1400,"output":260}}
+{"type":"step.start","ts":2700,"globalStep":4}
+{"type":"text.assistant","ts":2800,"globalStep":4,"text":"已完成所有操作。"}
+{"type":"step.finish","ts":2900,"globalStep":4,"reason":"end_turn","tokens":{"input":1500,"output":30,"cacheRead":600,"cacheWrite":0,"reasoning":0},"cumTokens":{"input":1500,"output":290}}
+{"type":"session.end","ts":3000,"totalTokens":{"input":1500,"output":290}}
