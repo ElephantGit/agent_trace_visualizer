@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 
 from trace_viz.config import MERMAID_CDN, MAX_MERMAID_EVENTS, PAGE_SIZE, SAFE_PALETTE
 from trace_viz.models import ParseResult
@@ -25,39 +27,45 @@ def render_mermaid(
     row_height: int = 32,
     event_count: int = 0,
 ) -> None:
-    """Render a Mermaid sequence diagram inside an auto-sized iframe.
+    """Render a Mermaid sequence diagram in an auto-height iframe.
 
-    Mermaid's `startOnLoad`/`run` path renders into a transient detached container and
-    fails inside Streamlit's `components.html` iframe with "svg element not in render
-    tree", which Mermaid then masks as the generic "Syntax error in text" error svg.
-    We therefore disable `startOnLoad` and call the explicit `mermaid.render(id, src)`
-    API after the CDN has loaded, inserting the returned svg into a real, visible
-    container so the diagram is laid out against the live DOM.
+    We render into a temp HTML file and embed it with ``st.iframe(height="content")``.
+    Streamlit then measures the iframe's real content height (the rendered svg) and
+    sizes both the iframe and its wrapper to exactly that height, so the sections
+    below ("复制 Mermaid 源码", "单个工具深度诊断") sit flush against the diagram -
+    no overlap (diagram never taller than its box), no gap (never shorter), and the
+    diagram keeps its natural aspect ratio so it stays readable.
+
+    Previous attempts used ``components.html`` with a fixed Python height estimate:
+    the estimate never matched the real svg height, so a tall diagram overflowed its
+    Streamlit-owned wrapper and bled into the sections below (overlap), while a short
+    one left a gap; stretching the svg with height:100% "fixed" the overlap but
+    scaled the diagram down until session_end boxes were unreadable. The temp-file +
+    st.iframe(height="content") path lets Streamlit own the height and keep it right.
+
+    The HTML is written to a file (not passed inline) because st.iframe embeds
+    inline HTML via srcdoc, and the minified mermaid CDN contains characters that
+    break that embedding ("Invalid or unexpected token"); a real file loads normally.
+
+    Mermaid's ``startOnLoad``/``run`` path renders into a transient detached
+    container and fails inside the iframe with "svg element not in render tree",
+    which Mermaid masks as the generic "Syntax error in text" error svg. We disable
+    ``startOnLoad`` and call the explicit ``mermaid.render(id, src)`` API after the
+    CDN has loaded, inserting the returned svg into a real, visible container.
     """
-    height = max(400, event_count * row_height * 2 + 200)
-    # The source is JSON-encoded into the script so quotes, newlines, and CJK in agent
-    # text cannot break out of the JS string literal — no manual escaping needed.
-    # The mermaid source is JSON-encoded into the script so quotes, newlines, and CJK
-    # in agent text cannot break out of the JS string literal — no manual escaping.
+    # The source is JSON-encoded into the script so quotes, newlines, and CJK in
+    # agent text cannot break out of the JS string literal - no manual escaping.
     src_json = json.dumps(mermaid_src, ensure_ascii=False)
-    # The inline JS is written as one template so no Python string-quote arithmetic can
-    # silently break it (an earlier version had a querySelector selector with embedded
-    # double-quotes that broke the Python literal and made Streamlit fail to import).
     script = (
         "window.__mmd_src=" + src_json + ";\n"
         "mermaid.initialize({startOnLoad:false,theme:'" + theme + "',"
         "sequence:{mirrorActors:false,messageAlign:'left'}});\n"
-        # Mermaid 10 leaves a temporary <div id="d<id>"> holding an error svg in the
-        # body on every failed render() call. Without cleanup these accumulate under
-        # the real diagram and show as stacked "Syntax error in text" svgs at the
-        # bottom — the exact symptom the retry loop exists to avoid.
-        "function __mmd_cleanup(){var b=document.body,out=document.getElementById('mermaid-out');"
         # Mermaid 10 leaves throwaway render artifacts in the body after each failed
-        # render() retry: orphan <svg> elements (with no id) and "dmmd-<id>" containers,
-        # each ~150px tall. They stack under #mermaid-out and inflate the body far past
-        # the real diagram, leaving a big blank gap below it before the controls. Only
-        # remove transients that are NOT inside #mermaid-out (the real diagram lives
-        # there and must survive).
+        # render() retry: orphan <svg> elements (with no id) and "dmmd-<id>"
+        # containers, each ~150px tall. They stack under #mermaid-out and inflate
+        # the body far past the real diagram. Only remove transients that are NOT
+        # inside #mermaid-out (the real diagram lives there and must survive).
+        "function __mmd_cleanup(){var b=document.body,out=document.getElementById('mermaid-out');"
         "Array.prototype.forEach.call(b.children,function(n){"
         "if(n===out)return;"
         "var tn=(n.tagName||'').toUpperCase();"
@@ -71,11 +79,11 @@ def render_mermaid(
         "Array.prototype.forEach.call(svg.querySelectorAll('line'),function(l){"
         "var x1=l.getAttribute('x1'),x2=l.getAttribute('x2');"
         "if(x1!=null&&x2!=null&&x1===x2){l.setAttribute('y2',h);}});}\n"
-        # The first mermaid.render() inside Streamlit's components.html iframe fires
-        # before the iframe's layout has settled, so Mermaid's temporary svg measures
-        # against a not-yet-rendered tree and throws "svg element not in render tree"
-        # (which Mermaid masks as the generic "Syntax error in text" error svg).
-        # Retry with a fresh diagram id until the layout settles (up to ~10s).
+        # The first mermaid.render() inside the iframe fires before the layout has
+        # settled, so Mermaid's temporary svg measures against a not-yet-rendered
+        # tree and throws "svg element not in render tree" (which Mermaid masks as
+        # the generic "Syntax error in text" error svg). Retry with a fresh diagram
+        # id until the layout settles (up to ~10s).
         "function __mmd_render(){var src=window.__mmd_src,out=document.getElementById('mermaid-out');"
         "__mmd_cleanup();"
         "var id='mmd-'+(window.__mmdTries||0);"
@@ -84,18 +92,6 @@ def render_mermaid(
         "window.__mmdTries=(window.__mmdTries||0)+1;"
         "if(window.__mmdTries<20){window.__mmdPending=setTimeout(__mmd_render,500);out.textContent='';}"
         "else{out.textContent='Mermaid: '+(e&&e.message||e);}});}\n"
-        # The iframe's height is owned by Streamlit (set from the Python `height`
-        # arg below) and Streamlit lays out the sections below against that same
-        # height, so the diagram and "复制 Mermaid 源码" / "单个工具深度诊断" stay in
-        # sync for free. We therefore do NOT resize the iframe from JS: setting
-        # fe.style.height made the iframe diverge from Streamlit's wrapper height
-        # (React re-pinned the wrapper to the Python arg), and when the diagram was
-        # taller than the estimate the iframe overflowed its wrapper and bled into
-        # the sections below (overlap); when shorter, it left a gap. Instead the svg
-        # fills the iframe at 100% height with preserveAspectRatio so the diagram is
-        # always exactly the iframe's height — never taller (no overlap), never
-        # shorter (no gap) — whatever the estimate.
-
         # The parser-blocking CDN above has loaded mermaid by here; wait for the
         # iframe to finish laying out before the first attempt.
         "window.addEventListener('load',function(){setTimeout(__mmd_render,300);});\n"
@@ -103,20 +99,27 @@ def render_mermaid(
     html = (
         "<!DOCTYPE html><html><head>"
         f"<script src='{MERMAID_CDN}'></script>"
-        "<style>html,body{margin:0;padding:8px;background:transparent;height:100%;overflow:hidden}"
-        ".mermaid{display:none}"  # raw source stays hidden; the rendered svg is shown below"
-        ".mermaid-out{height:100%;overflow:hidden}"
-        # width/height:100% + the svg's own preserveAspectRatio (xMidYMid meet, the
-        # mermaid default) scale the diagram to exactly fill the iframe while keeping
-        # its aspect ratio — so it is never taller (overlap) nor shorter (gap) than
-        # the Streamlit-owned iframe height, regardless of the Python height estimate.
-        ".mermaid-out svg{width:100%!important;height:100%!important;display:block}</style>"
+        "<style>html,body{margin:0;padding:8px;background:transparent}"
+        ".mermaid{display:none}"  # raw source stays hidden; the rendered svg is shown below
+        ".mermaid-out{overflow:hidden}"
+        # max-width:100% + height:auto keep the diagram at its natural aspect ratio
+        # so it stays readable; the iframe auto-sizes to that height via height="content".
+        ".mermaid-out svg{max-width:100%!important;height:auto!important;display:block}</style>"
         "</head><body>"
         "<div class='mermaid'>\n" + mermaid_src + "\n</div>"
         "<div class='mermaid-out' id='mermaid-out'></div>"
         "<script>\n" + script + "</script></body></html>"
     )
-    components.html(html, height=height, scrolling=True)
+    # Write to a temp file named by a short hash of the content so that repeated
+    # renders of the same diagram reuse the file (avoids writing one file per rerun)
+    # while different diagrams get different files. st.iframe loads the file via a
+    # real URL instead of srcdoc, which is what lets the mermaid CDN script run.
+    digest = hashlib.sha1(html.encode("utf-8")).hexdigest()[:16]
+    cache_dir = Path(tempfile.gettempdir()) / "agent_trace_vis_mermaid"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    html_path = cache_dir / f"mermaid-{digest}.html"
+    html_path.write_text(html, encoding="utf-8")
+    st.iframe(str(html_path), height="content")
 
 
 def mermaid_controls(*, key_prefix: str) -> tuple[int, str, int]:
