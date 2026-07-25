@@ -79,19 +79,23 @@ def render_mermaid(
         "function __mmd_render(){var src=window.__mmd_src,out=document.getElementById('mermaid-out');"
         "__mmd_cleanup();"
         "var id='mmd-'+(window.__mmdTries||0);"
-        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();__mmd_resize();})"
+        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();requestAnimationFrame(__mmd_resize);})"
         ".catch(function(e){__mmd_cleanup();"
         "window.__mmdTries=(window.__mmdTries||0)+1;"
         "if(window.__mmdTries<20){window.__mmdPending=setTimeout(__mmd_render,500);out.textContent='';}"
-        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});__mmd_resize();}\n"
+        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});requestAnimationFrame(__mmd_resize);}\n"
         # Streamlit's components.html iframe has a fixed height passed from Python
-        # (an event-count estimate) that is larger than the actual rendered svg on
-        # tall diagrams, leaving a big blank gap below the diagram before the
-        # "复制 Mermaid 源码" controls. Resize the iframe to the real content height
-        # after render so the diagram sits flush against the controls below.
-        # frameElement is the component iframe itself (same-origin with Streamlit).
+        # (an event-count estimate). The diagram's real rendered height differs, so
+        # we resize the iframe to the svg's actual layout height. Read the SVG box (not
+        # body.scrollHeight, which is 0 before the svg is laid out and would shrink the
+        # iframe to nothing and let the unsized svg visually overflow into the sections
+        # below). Defer one frame so layout has settled, and skip when the svg has no
+        # height yet. The body is overflow:hidden so a transient mis-size never lets the
+        # diagram bleed past the iframe into "复制 Mermaid 源码" / "单个工具深度诊断".
         "function __mmd_resize(){try{var fe=window.frameElement;if(!fe)return;"
-        "var h=document.body.scrollHeight;if(h>0)fe.style.height=(h+8)+'px';}catch(e){}}\n"
+        "var svg=document.getElementById('mermaid-out').querySelector('svg');"
+        "if(!svg)return;var h=Math.ceil(svg.getBoundingClientRect().height);"
+        "if(h>0)fe.style.height=(h+16)+'px';}catch(e){}}\n"
         # The parser-blocking CDN above has loaded mermaid by here; wait for the
         # iframe to finish laying out before the first attempt.
         "window.addEventListener('load',function(){setTimeout(__mmd_render,300);});\n"
@@ -99,8 +103,9 @@ def render_mermaid(
     html = (
         "<!DOCTYPE html><html><head>"
         f"<script src='{MERMAID_CDN}'></script>"
-        "<style>body{margin:0;padding:8px;background:transparent}"
+        "<style>body{margin:0;padding:8px;background:transparent;overflow:hidden}"
         ".mermaid{display:none}"  # raw source stays hidden; the rendered svg is shown below"
+        ".mermaid-out{overflow:hidden}"
         ".mermaid-out svg{max-width:100%!important;height:auto!important}</style>"
         "</head><body>"
         "<div class='mermaid'>\n" + mermaid_src + "\n</div>"
