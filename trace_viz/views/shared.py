@@ -79,23 +79,23 @@ def render_mermaid(
         "function __mmd_render(){var src=window.__mmd_src,out=document.getElementById('mermaid-out');"
         "__mmd_cleanup();"
         "var id='mmd-'+(window.__mmdTries||0);"
-        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();requestAnimationFrame(__mmd_resize);})"
+        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();})"
         ".catch(function(e){__mmd_cleanup();"
         "window.__mmdTries=(window.__mmdTries||0)+1;"
         "if(window.__mmdTries<20){window.__mmdPending=setTimeout(__mmd_render,500);out.textContent='';}"
-        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});requestAnimationFrame(__mmd_resize);}\n"
-        # Streamlit's components.html iframe has a fixed height passed from Python
-        # (an event-count estimate). The diagram's real rendered height differs, so
-        # we resize the iframe to the svg's actual layout height. Read the SVG box (not
-        # body.scrollHeight, which is 0 before the svg is laid out and would shrink the
-        # iframe to nothing and let the unsized svg visually overflow into the sections
-        # below). Defer one frame so layout has settled, and skip when the svg has no
-        # height yet. The body is overflow:hidden so a transient mis-size never lets the
-        # diagram bleed past the iframe into "复制 Mermaid 源码" / "单个工具深度诊断".
-        "function __mmd_resize(){try{var fe=window.frameElement;if(!fe)return;"
-        "var svg=document.getElementById('mermaid-out').querySelector('svg');"
-        "if(!svg)return;var h=Math.ceil(svg.getBoundingClientRect().height);"
-        "if(h>0)fe.style.height=(h+16)+'px';}catch(e){}}\n"
+        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});}\n"
+        # The iframe's height is owned by Streamlit (set from the Python `height`
+        # arg below) and Streamlit lays out the sections below against that same
+        # height, so the diagram and "复制 Mermaid 源码" / "单个工具深度诊断" stay in
+        # sync for free. We therefore do NOT resize the iframe from JS: setting
+        # fe.style.height made the iframe diverge from Streamlit's wrapper height
+        # (React re-pinned the wrapper to the Python arg), and when the diagram was
+        # taller than the estimate the iframe overflowed its wrapper and bled into
+        # the sections below (overlap); when shorter, it left a gap. Instead the svg
+        # fills the iframe at 100% height with preserveAspectRatio so the diagram is
+        # always exactly the iframe's height — never taller (no overlap), never
+        # shorter (no gap) — whatever the estimate.
+
         # The parser-blocking CDN above has loaded mermaid by here; wait for the
         # iframe to finish laying out before the first attempt.
         "window.addEventListener('load',function(){setTimeout(__mmd_render,300);});\n"
@@ -103,10 +103,14 @@ def render_mermaid(
     html = (
         "<!DOCTYPE html><html><head>"
         f"<script src='{MERMAID_CDN}'></script>"
-        "<style>body{margin:0;padding:8px;background:transparent;overflow:hidden}"
+        "<style>html,body{margin:0;padding:8px;background:transparent;height:100%;overflow:hidden}"
         ".mermaid{display:none}"  # raw source stays hidden; the rendered svg is shown below"
-        ".mermaid-out{overflow:hidden}"
-        ".mermaid-out svg{max-width:100%!important;height:auto!important}</style>"
+        ".mermaid-out{height:100%;overflow:hidden}"
+        # width/height:100% + the svg's own preserveAspectRatio (xMidYMid meet, the
+        # mermaid default) scale the diagram to exactly fill the iframe while keeping
+        # its aspect ratio — so it is never taller (overlap) nor shorter (gap) than
+        # the Streamlit-owned iframe height, regardless of the Python height estimate.
+        ".mermaid-out svg{width:100%!important;height:100%!important;display:block}</style>"
         "</head><body>"
         "<div class='mermaid'>\n" + mermaid_src + "\n</div>"
         "<div class='mermaid-out' id='mermaid-out'></div>"
