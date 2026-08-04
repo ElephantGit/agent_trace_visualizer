@@ -8,7 +8,6 @@ Key algorithm: weight-based token allotment.
 
 from __future__ import annotations
 
-import json
 import re
 from collections import deque
 from typing import Any
@@ -16,13 +15,13 @@ from typing import Any
 import streamlit as st
 
 from trace_viz.models import ParseResult, ResultInfo, SessionInfo, ToolCall, Turn
-from trace_viz.utils import count_tokens, to_str
+from trace_viz.utils import count_tokens, load_ndjson, to_str
 
 
 @st.cache_data(show_spinner=False)
 def parse(content: bytes) -> ParseResult:
     """Parse Opencode NDJSON content and return a structured ParseResult."""
-    raw_events = _load_ndjson(content)
+    raw_events = load_ndjson(content)
     if not raw_events:
         return ParseResult.empty("opencode")
 
@@ -44,18 +43,6 @@ def parse(content: bytes) -> ParseResult:
 
 
 # ── Private helpers ────────────────────────────────────────────
-
-def _load_ndjson(content: bytes) -> list[dict[str, Any]]:
-    events: list[dict] = []
-    for line in content.decode("utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-    return events
-
 
 def _extract_session_info(events: list[dict]) -> SessionInfo:
     for evt in events:
@@ -111,10 +98,18 @@ def _extract_tool_calls(
         gs = tf.get("globalStep", 0)
         cid = tf.get("toolCallId", "")
 
-        # Token delta: how much the context window grew after this step
+        # Token delta: how much the context window grew after this step.
+        # 对于最后一个 globalStep，没有 gs+1 可供差分，此时从 session 总
+        # input 中减去当前 step 的 input 作为下界近似（至少兜底不为 0）。
         curr = step_map.get(gs)
         nxt = step_map.get(gs + 1)
-        token_delta = max(0, nxt.input_tokens - curr.input_tokens) if curr and nxt else 0
+        if curr and nxt:
+            token_delta = max(0, nxt.input_tokens - curr.input_tokens)
+        elif curr and turns:
+            # 最后一个 step：用最终累积值 - 当前值
+            token_delta = max(0, turns[-1].input_tokens - curr.input_tokens)
+        else:
+            token_delta = 0
 
         tok = finish_tokens[idx]
         parallel_indices = step_to_indices.get(gs, [idx])
@@ -249,6 +244,6 @@ def _build_result_info(events: list[dict], turns: list[Turn]) -> ResultInfo:
         info.total_output = turns[-1].output_tokens
 
     if len(events) >= 2:
-        info.duration_ms = events[-1]["ts"] - events[0]["ts"]
+        info.duration_ms = events[-1].get("ts", 0) - events[0].get("ts", 0)
 
     return info

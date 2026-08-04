@@ -113,3 +113,16 @@ def decode_bytes(content: bytes) -> str | None:
         except (UnicodeDecodeError, Exception):
             continue
     return None
+
+
+def load_ndjson(content: bytes) -> list[dict[str, Any]]:
+    """Parse NDJSON bytes into a list of dicts, silently dropping malformed lines."""
+    events: list[dict] = []
+    for line in content.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if line:
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return events

@@ -14,6 +14,7 @@ import streamlit as st
 
 from trace_viz import embedded
 from trace_viz.views import claude_code as cc_view
+from trace_viz.views import compare as cmp_view
 from trace_viz.views import gemini as gem_view
 from trace_viz.views import opencode as oc_view
 
@@ -92,7 +93,7 @@ if st.session_state.app_mode is None:
     st.caption("选择要分析的日志格式")
     st.markdown("---")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.markdown("#### Opencode")
@@ -115,6 +116,13 @@ if st.session_state.app_mode is None:
             st.session_state.app_mode = "claude_code"
             st.rerun()
 
+    with col4:
+        st.markdown("#### 📊 对比模式")
+        st.markdown("加载两份 trace 进行 A/B Token 消耗对比")
+        if st.button("Token 对比分析", key="btn_cmp", use_container_width=True):
+            st.session_state.app_mode = "compare"
+            st.rerun()
+
     st.stop()
 
 # ── Dispatch ───────────────────────────────────────────────────
@@ -125,6 +133,8 @@ elif mode == "gemini":
     gem_view.render()
 elif mode == "claude_code":
     cc_view.render()
+elif mode == "compare":
+    cmp_view.render()
 else:
     st.session_state.app_mode = None
     st.rerun()

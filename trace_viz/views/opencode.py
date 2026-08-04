@@ -14,6 +14,7 @@ from trace_viz.config import OC_COLORS, SAFE_PALETTE
 from trace_viz.models import ParseResult
 from trace_viz.parsers.opencode import parse
 from trace_viz.utils import format_duration, mermaid_quote, sanitize_mermaid, to_str
+from trace_viz.views.replay import opencode_to_replay_steps, render_replay
 from trace_viz.views.shared import (
     mermaid_controls,
     render_mermaid,
@@ -58,14 +59,15 @@ def render_body(result: ParseResult) -> None:
 
     df_turns = pd.DataFrame([t.__dict__ for t in result.turns]) if result.turns else pd.DataFrame()
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["总览", "Subagent", "Token 趋势", "工具执行与消耗", "原始数据"]
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["📜 会话回放", "总览", "Subagent", "Token 趋势", "工具执行与消耗", "原始数据"]
     )
-    with tab1: _tab_overview(result, df_tools)
-    with tab2: _tab_subagents(result)
-    with tab3: _tab_tokens(df_turns)
-    with tab4: _tab_tools(df_tools)
-    with tab5: _tab_raw(result, df_turns, df_tools)
+    with tab1: _tab_replay(result)
+    with tab2: _tab_overview(result, df_tools)
+    with tab3: _tab_subagents(result)
+    with tab4: _tab_tokens(df_turns)
+    with tab5: _tab_tools(df_tools)
+    with tab6: _tab_raw(result, df_turns, df_tools)
 
     # ── 单个工具深度诊断（位于所有 Tab 之外，页面底部）─────────────
     if not df_tools.empty:
@@ -123,6 +125,14 @@ def _load_subagent_result(child_session_id: str) -> ParseResult | None:
         return parse(p.read_bytes())
     except Exception:
         return None
+
+
+# ── Tab 0: Session replay ────────────────────────────────────
+
+def _tab_replay(result: ParseResult) -> None:
+    """以时间线形式回放整个 Opencode 会话的完整过程。"""
+    steps = opencode_to_replay_steps(result.raw_events)
+    render_replay(steps, title="📜 Opencode 会话回放")
 
 
 # ── Tab 1: Overview ────────────────────────────────────────────

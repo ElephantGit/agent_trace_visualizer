@@ -16,20 +16,19 @@ keys → transcript format; otherwise → stream-json format.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any
 
 import streamlit as st
 
 from trace_viz.models import ParseResult, ResultInfo, SessionInfo, ToolCall, Turn
-from trace_viz.utils import count_tokens, to_str
+from trace_viz.utils import count_tokens, load_ndjson, to_str
 
 
 @st.cache_data(show_spinner=False)
 def parse(content: bytes) -> ParseResult:
     """Parse Claude Code NDJSON bytes, auto-detecting format."""
-    raw_events = _load_ndjson(content)
+    raw_events = load_ndjson(content)
     if not raw_events:
         return ParseResult.empty("claude_code")
 
@@ -44,18 +43,6 @@ def parse(content: bytes) -> ParseResult:
 
 
 # ── Shared NDJSON loader ───────────────────────────────────────
-
-def _load_ndjson(content: bytes) -> list[dict[str, Any]]:
-    events: list[dict] = []
-    for line in content.decode("utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-    return events
-
 
 # ══════════════════════════════════════════════════════════════
 # FORMAT 1 — stream-json  (produced by -p / --print)
@@ -340,10 +327,12 @@ def _parse_transcript(raw_events: list[dict]) -> ParseResult:
     # ── Result info ────────────────────────────────────────────
     result_info = ResultInfo(num_turns=len(turns))
     if turns:
-        result_info.total_input  = turns[-1].input_tokens
+        # transcript 模式下每次 assistant event 的 usage 字段是当次调用的实际值，
+        # 并非累积量；这里对所有 turn 求和以反映 session 总用量
+        result_info.total_input  = sum(t.input_tokens for t in turns)
         result_info.total_output = sum(t.output_tokens for t in turns)
-        result_info.total_cache_read     = turns[-1].cache_read
-        result_info.total_cache_creation = turns[-1].cache_creation
+        result_info.total_cache_read     = sum(t.cache_read for t in turns)
+        result_info.total_cache_creation = sum(t.cache_creation for t in turns)
 
     timestamps = [e.get("timestamp") for e in raw_events if e.get("timestamp")]
     if len(timestamps) >= 2:
