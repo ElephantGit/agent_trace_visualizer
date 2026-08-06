@@ -65,6 +65,7 @@ def _parse_stream_json(raw_events: list[dict]) -> ParseResult:
         result_info=result_info,
         turns=turns,
         tool_calls=tool_calls,
+        subagents=_extract_subagents_cc(raw_events),
         parse_debug={"format": "stream-json"},
     )
 
@@ -354,8 +355,123 @@ def _parse_transcript(raw_events: list[dict]) -> ParseResult:
         result_info=result_info,
         turns=turns,
         tool_calls=tool_calls,
+        subagents=_extract_subagents_cc(raw_events),
         parse_debug={"format": "transcript", "cwd": cwd, "version": version},
     )
+
+
+# ── Subagent extraction ──────────────────────────────────────────
+
+# Claude Code 目前不发出独立 subagent 事件。子代理派发体现为普通的
+# tool_use (name = "task" / "Task")，描述和类型编码在 input 字段里。
+# 本函数从 assistant/user 事件对中提取 subagent 信息，产出与
+# opencode parser 的 _extract_subagents 一致的数据结构。
+
+_SUBAGENT_TOOL_NAMES = {"task", "Task", "agent", "Agent", "delegate"}
+
+
+def _extract_subagents_cc(raw_events: list[dict]) -> list[dict]:
+    """从 Claude Code raw_events 中提取 task 工具派发的 subagent 信息。"""
+    # 收集所有 tool_result（可能嵌套在 user 消息下，也可能是顶层）
+    tool_results: dict[str, dict] = {}
+    for evt in raw_events:
+        # 顶层 tool_result（transcript 格式可能出现）
+        if evt.get("type") == "tool_result":
+            tid = evt.get("tool_use_id", "") or evt.get("toolUseId", "")
+            raw_output = evt.get("content", "")
+            if isinstance(raw_output, list):
+                raw_output = "\n".join(
+                    (c.get("text", str(c)) if isinstance(c, dict) else str(c))
+                    for c in raw_output
+                )
+            tool_results[tid] = {
+                "output": to_str(raw_output),
+                "is_error": bool(evt.get("isError") or evt.get("is_error", False)),
+            }
+        # user 消息下的 tool_result block
+        if evt.get("type") == "user":
+            msg = evt.get("message") or {}
+            if not isinstance(msg, dict):
+                continue
+            raw_content = msg.get("content", [])
+            if isinstance(raw_content, str):
+                continue
+            for block in raw_content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") != "tool_result":
+                    continue
+                tid = block.get("tool_use_id", "") or block.get("toolUseId", "")
+                raw_output = block.get("content", "")
+                if isinstance(raw_output, list):
+                    raw_output = "\n".join(
+                        (c.get("text", str(c)) if isinstance(c, dict) else str(c))
+                        for c in raw_output
+                    )
+                tool_results[tid] = {
+                    "output": to_str(raw_output),
+                    "is_error": bool(block.get("is_error", False)),
+                }
+
+    # 遍历 assistant 消息找 subagent 工具调用
+    subagents: list[dict] = []
+    for evt in raw_events:
+        if evt.get("type") != "assistant":
+            continue
+        msg = evt.get("message") or {}
+        if not isinstance(msg, dict):
+            continue
+        raw_content = msg.get("content", [])
+        if isinstance(raw_content, str):
+            continue
+        for block in raw_content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_use":
+                continue
+            name = block.get("name", "")
+            if name not in _SUBAGENT_TOOL_NAMES:
+                continue
+            tid = block.get("id", "")
+            result = tool_results.get(tid, {})
+            inp = block.get("input") or {}
+            if not isinstance(inp, dict):
+                inp = {}
+
+            # 尝试从 result output 中提取子 session ID
+            # Claude Code 的 task 输出中可能包含子会话 UUID
+            output_text = result.get("output", "")
+            child_id = ""
+            import re
+            m = re.search(
+                r'(?:session[_\s]?id[:\s]+|task[_\s]?id[:\s]+)'
+                r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
+                output_text, re.IGNORECASE,
+            )
+            if m:
+                child_id = m.group(1)
+
+            state = "error" if result.get("is_error") else "completed"
+            subagents.append({
+                "childSessionID": child_id,
+                "agentName": (
+                    inp.get("subagent_type", "")
+                    or inp.get("agent_type", "")
+                    or inp.get("type", "")
+                    or name
+                ),
+                "description": (
+                    inp.get("description", "")
+                    or inp.get("prompt", "")
+                    or inp.get("task", "")
+                ),
+                "state": state,
+                "globalStep": 0,
+                "ts": 0,
+                "dispatchDurationMs": None,
+            })
+
+    return subagents
 
 
 # ── Helper ─────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ from trace_viz.models import ParseResult
 from trace_viz.parsers.claude_code import parse
 from trace_viz.utils import format_duration, mermaid_quote, sanitize_mermaid, to_str
 from trace_viz.views.replay import claude_code_to_replay_steps, render_replay
+from trace_viz.views.workflow import build_workflow
 from trace_viz.views.shared import (
     mermaid_controls,
     raw_events_tab,
@@ -337,7 +338,8 @@ def _merge_consecutive_turns_df(df_turns: pd.DataFrame) -> pd.DataFrame:
 def _tab_replay(result: ParseResult) -> None:
     """以时间线形式回放整个会话的完整过程。"""
     steps = claude_code_to_replay_steps(result.raw_events)
-    render_replay(steps, title="📜 Claude Code 会话回放")
+    workflow_root = build_workflow(result)
+    render_replay(steps, title="📜 Claude Code 会话回放", workflow_root=workflow_root)
 
 
 # ── Tab 2: Overview ──────────────────────────────────────────

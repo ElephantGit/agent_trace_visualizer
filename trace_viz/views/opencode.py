@@ -15,6 +15,7 @@ from trace_viz.models import ParseResult
 from trace_viz.parsers.opencode import parse
 from trace_viz.utils import format_duration, mermaid_quote, sanitize_mermaid, to_str
 from trace_viz.views.replay import opencode_to_replay_steps, render_replay
+from trace_viz.views.workflow import build_workflow
 from trace_viz.views.shared import (
     mermaid_controls,
     render_mermaid,
@@ -132,7 +133,8 @@ def _load_subagent_result(child_session_id: str) -> ParseResult | None:
 def _tab_replay(result: ParseResult) -> None:
     """以时间线形式回放整个 Opencode 会话的完整过程。"""
     steps = opencode_to_replay_steps(result.raw_events)
-    render_replay(steps, title="📜 Opencode 会话回放")
+    workflow_root = build_workflow(result)
+    render_replay(steps, title="📜 Opencode 会话回放", workflow_root=workflow_root)
 
 
 # ── Tab 1: Overview ────────────────────────────────────────────

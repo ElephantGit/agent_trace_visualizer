@@ -19,6 +19,7 @@ from typing import Any
 
 import streamlit as st
 
+from trace_viz.models import WorkflowNode
 from trace_viz.utils import to_str
 
 # ── 回放步骤分类 ─────────────────────────────────────────────
@@ -141,12 +142,46 @@ class ReplayStep:
 
 # ── 渲染入口 ─────────────────────────────────────────────────
 
-def render_replay(steps: list[ReplayStep], *, title: str = "📜 会话回放") -> None:
-    """渲染完整的会话回放视图。"""
+def render_replay(
+    steps: list[ReplayStep],
+    *,
+    title: str = "📜 会话回放",
+    workflow_root: WorkflowNode | None = None,
+) -> None:
+    """渲染完整的会话回放视图。
+
+    Args:
+        steps: 事件级回放步骤列表
+        title: 回放区域标题
+        workflow_root: 可选的工作流树根节点，提供后会在页面顶部增加
+                       "事件回放 / 工作流视图" 切换开关
+    """
     if not steps:
         st.info("暂无会话事件可供回放。")
         return
 
+    # ── 视图模式切换 ────────────────────────────────────────
+    if workflow_root is not None:
+        view_mode = st.radio(
+            "视图模式",
+            options=["📜 事件回放", "🔀 工作流视图"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="replay_view_mode",
+        )
+
+        if view_mode == "🔀 工作流视图":
+            if workflow_root.children:
+                from trace_viz.views.workflow import render_workflow
+                render_workflow(workflow_root)
+            else:
+                st.info(
+                    "本次会话未使用工作流（无 subagent 派发），"
+                    "请切换到事件回放查看详细步骤。"
+                )
+            return
+
+    # ── 原有事件回放逻辑 ─────────────────────────────────────
     st.markdown(f"### {title}")
     st.caption(f"共 {len(steps)} 个步骤 — 不同颜色代表不同事件类型")
 
