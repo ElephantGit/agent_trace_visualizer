@@ -161,25 +161,30 @@ def render_replay(
         return
 
     # ── 视图模式切换 ────────────────────────────────────────
-    if workflow_root is not None:
-        view_mode = st.radio(
-            "视图模式",
-            options=["📜 事件回放", "🔀 工作流视图"],
-            horizontal=True,
-            label_visibility="collapsed",
-            key="replay_view_mode",
-        )
+    # 始终显示切换开关：ReactFlow JSON 可能独立于 trace 存在
+    view_mode = st.radio(
+        "视图模式",
+        options=["📜 事件回放", "🔀 工作流视图"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="replay_view_mode",
+    )
 
-        if view_mode == "🔀 工作流视图":
-            if workflow_root.children:
-                from trace_viz.views.workflow import render_workflow
-                render_workflow(workflow_root)
-            else:
-                st.info(
-                    "本次会话未使用工作流（无 subagent 派发），"
-                    "请切换到事件回放查看详细步骤。"
-                )
-            return
+    if view_mode == "🔀 工作流视图":
+        from trace_viz.views.workflow import load_reactflow_json, render_workflow
+
+        # ReactFlow JSON 优先，trace 提取树作为 fallback
+        rf_data = load_reactflow_json()
+        if rf_data is not None:
+            render_workflow(workflow_root, reactflow_data=rf_data)
+        elif workflow_root is not None and workflow_root.children:
+            render_workflow(workflow_root)
+        else:
+            st.info(
+                "未找到工作流定义。请将 ReactFlow JSON 放置到 `assets/reactflow.json`，"
+                "或加载包含 subagent 派发的 trace 文件。"
+            )
+        return
 
     # ── 原有事件回放逻辑 ─────────────────────────────────────
     st.markdown(f"### {title}")
