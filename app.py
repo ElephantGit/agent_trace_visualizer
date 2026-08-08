@@ -75,6 +75,13 @@ if _embedded_session_id and _embedded_agent_type:
     render_embedded(_embedded_session_id, _embedded_agent_type)
     st.stop()
 
+_direct_app_mode = _query.get("app_mode") or (
+    _query.get("appMode") if isinstance(_query, dict) else None
+)
+if _direct_app_mode == "compare":
+    cmp_view.render()
+    st.stop()
+
 # ── Session state defaults ─────────────────────────────────────
 if "app_mode" not in st.session_state:
     st.session_state.app_mode = None
