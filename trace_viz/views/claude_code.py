@@ -366,7 +366,7 @@ def _tab_replay(result: ParseResult) -> None:
     """以时间线形式回放整个会话的完整过程。"""
     steps = claude_code_to_replay_steps(result.raw_events)
     workflow_root = build_workflow(result)
-    render_replay(steps, title="📜 Claude Code 会话回放", workflow_root=workflow_root)
+    render_replay(steps, title="📜 会话回放", workflow_root=workflow_root)
 
 
 # ── Tab 2: Overview ──────────────────────────────────────────
