@@ -656,7 +656,7 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
         st.plotly_chart(fa, width='stretch')
 
     with col_b:
-        st.subheader("每次调用的输出大小（Tiktoken Tokens）")
+        st.subheader("工具输出Token数")
         st.plotly_chart(tool_tiktoken_fig(df_tools), width='stretch')
 
     st.divider()
