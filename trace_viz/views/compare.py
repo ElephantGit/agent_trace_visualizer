@@ -239,6 +239,12 @@ def _summary_metrics(
     if out_a or out_b:
         metrics.append(("总 Output Tokens", out_a, out_b, "int", True))
 
+    # Total Tokens（Input + Output）
+    tot_a = in_a + out_a
+    tot_b = in_b + out_b
+    if tot_a or tot_b:
+        metrics.append(("总 Tokens（In + Out）", tot_a, tot_b, "int", True))
+
     # Total Cost
     cost_a = float(ri_a.total_cost_usd or 0)
     cost_b = float(ri_b.total_cost_usd or 0)
