@@ -101,9 +101,11 @@ def _sidebar() -> tuple[
         # Agent 类型选择
         agent_keys = list(PARSER_MAP.keys())
         agent_labels = [v[0] for v in PARSER_MAP.values()]
+        default_idx = agent_keys.index("claude_code") if "claude_code" in agent_keys else 0
         agent_type = st.selectbox(
             "Agent 类型",
             agent_keys,
+            index=default_idx,
             format_func=lambda k: dict(zip(agent_keys, agent_labels))[k],
             key="cmp_agent_type",
         )
