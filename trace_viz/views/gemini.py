@@ -58,7 +58,7 @@ def render() -> None:
 def _sidebar_input() -> ParseResult | None:
     with st.sidebar:
         st.header("数据来源")
-        if st.button("清除并重置", use_container_width=True):
+        if st.button("清除并重置", width='stretch'):
             for k in [k for k in st.session_state if k.startswith("gem_")]:
                 del st.session_state[k]
             st.rerun()
@@ -163,7 +163,7 @@ def _tab_overview(df: pd.DataFrame) -> None:
                          color="category", color_discrete_map=GEM_COLORS, hole=0.4)
             fig.update_traces(textinfo="label+percent+value")
             fig.update_layout(showlegend=False, margin=dict(t=0, b=0))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     with col_r:
         st.subheader("事件名称频次 Top 15")
@@ -175,7 +175,7 @@ def _tab_overview(df: pd.DataFrame) -> None:
             fig2 = px.bar(nc, x="count", y="short", orientation="h",
                           color_discrete_sequence=["#1a73e8"])
             fig2.update_layout(yaxis=dict(autorange="reversed"), margin=dict(t=0, b=0))
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
     df_ts = df[df["timestamp"].notna()] if "timestamp" in df.columns else pd.DataFrame()
     if not df_ts.empty:
@@ -186,7 +186,7 @@ def _tab_overview(df: pd.DataFrame) -> None:
         fig3 = px.bar(mc, x="minute", y="count", color="category",
                       color_discrete_map=GEM_COLORS, barmode="stack")
         fig3.update_layout(margin=dict(t=0, b=0), height=260)
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width='stretch')
 
     if "model" in df.columns:
         models = df[df["model"].notna() & (df["model"] != "")]["model"].unique()
@@ -198,7 +198,7 @@ def _tab_overview(df: pd.DataFrame) -> None:
             name_cat = (df.groupby(["event_name", "category"])
                           .size().reset_index(name="count")
                           .sort_values("count", ascending=False))
-            st.dataframe(name_cat, hide_index=True, use_container_width=True, height=300)
+            st.dataframe(name_cat, hide_index=True, width='stretch', height=300)
 
 
 # ── Tab 2: Timeline ────────────────────────────────────────────
@@ -230,7 +230,7 @@ def _tab_timeline(df: pd.DataFrame) -> None:
                             hover_data={"event_name": True, "body": True, "timestamp": False})
         fig_tl.update_traces(marker=dict(size=8, opacity=0.7))
         fig_tl.update_layout(showlegend=False, height=260, margin=dict(t=10, b=10))
-        st.plotly_chart(fig_tl, use_container_width=True)
+        st.plotly_chart(fig_tl, width='stretch')
 
     from trace_viz.config import PAGE_SIZE
     total_p = max(1, (len(df_f) + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -397,7 +397,7 @@ def _tab_tools(df: pd.DataFrame) -> None:
                     color_discrete_sequence=SAFE_PALETTE)
         fa.update_traces(textposition="outside")
         fa.update_layout(height=320, margin=dict(t=10, b=0), showlegend=False)
-        st.plotly_chart(fa, use_container_width=True)
+        st.plotly_chart(fa, width='stretch')
 
     with col_b:
         st.subheader("各工具耗时（avg / P90 / max）")
@@ -414,7 +414,7 @@ def _tab_tools(df: pd.DataFrame) -> None:
             fb.add_trace(go.Bar(x=ds[fname], y=ds["max"], name="最大", marker_color="#ea4335"))
             fb.update_layout(barmode="group", height=320, margin=dict(t=10, b=0),
                              legend=dict(orientation="h", y=1.1, x=1, xanchor="right"))
-            st.plotly_chart(fb, use_container_width=True)
+            st.plotly_chart(fb, width='stretch')
         else:
             st.info("无耗时数据")
 
@@ -446,7 +446,7 @@ def _tab_tools(df: pd.DataFrame) -> None:
             xaxis_title="第 N 次工具调用", yaxis_title="Response Tokens",
             legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
         )
-        st.plotly_chart(fc2, use_container_width=True)
+        st.plotly_chart(fc2, width='stretch')
 
         # col_c: per-tool summary  |  col_d: trend scatter + rolling mean
         col_c, col_d = st.columns(2)
@@ -477,7 +477,7 @@ def _tab_tools(df: pd.DataFrame) -> None:
                 xaxis_title="工具名称", yaxis_title="Tokens",
                 legend=dict(orientation="h", y=1.1, x=1, xanchor="right"),
             )
-            st.plotly_chart(fd, use_container_width=True)
+            st.plotly_chart(fd, width='stretch')
 
         with col_d:
             st.subheader("逐次 Response Token 趋势")
@@ -498,7 +498,7 @@ def _tab_tools(df: pd.DataFrame) -> None:
                 line=dict(color="gray", width=1.5, dash="dot"),
             ))
             fp.update_layout(height=300, margin=dict(t=10, b=0))
-            st.plotly_chart(fp, use_container_width=True)
+            st.plotly_chart(fp, width='stretch')
 
     else:
         st.info(
@@ -528,7 +528,7 @@ def _tab_tools(df: pd.DataFrame) -> None:
         for col in ("平均耗时ms", "最大耗时ms", "均ResponseTokens"):
             if col in eff.columns:
                 eff[col] = eff[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "—")
-        st.dataframe(eff, hide_index=True, use_container_width=True)
+        st.dataframe(eff, hide_index=True, width='stretch')
 
     with col_f:
         st.subheader("最慢的 10 次调用")
@@ -544,7 +544,7 @@ def _tab_tools(df: pd.DataFrame) -> None:
             )
             slow.rename(columns={fname: "工具", "duration_ms": "耗时(ms)"}, inplace=True)
             slow["耗时(ms)"] = slow["耗时(ms)"].apply(lambda x: f"{x:.0f}")
-            st.dataframe(slow, hide_index=True, use_container_width=True)
+            st.dataframe(slow, hide_index=True, width='stretch')
         else:
             st.info("无耗时数据")
 
@@ -592,7 +592,7 @@ def _tab_api_tokens(df: pd.DataFrame) -> None:
         ))
         fb.update_layout(height=320, margin=dict(t=20, b=0),
                          showlegend=False, yaxis_title="Tokens")
-        st.plotly_chart(fb, use_container_width=True)
+        st.plotly_chart(fb, width='stretch')
 
     with col_b:
         st.subheader("每次调用的 Input Token 数")
@@ -602,7 +602,7 @@ def _tab_api_tokens(df: pd.DataFrame) -> None:
         fi.update_layout(height=320, margin=dict(t=20, b=0),
                          xaxis_title="第 N 次 API 调用",
                          yaxis_title="Input Tokens", showlegend=False)
-        st.plotly_chart(fi, use_container_width=True)
+        st.plotly_chart(fi, width='stretch')
 
     st.divider()
     st.subheader("累计 Token 消耗曲线（按时间）")
@@ -620,7 +620,7 @@ def _tab_api_tokens(df: pd.DataFrame) -> None:
                      hovermode="x unified",
                      legend=dict(orientation="h", yanchor="bottom",
                                  y=1.02, xanchor="right", x=1))
-    st.plotly_chart(fc, use_container_width=True)
+    st.plotly_chart(fc, width='stretch')
 
     st.divider()
     st.subheader("每次调用 Input vs Output 对比")
@@ -633,7 +633,7 @@ def _tab_api_tokens(df: pd.DataFrame) -> None:
                      xaxis_title="第 N 次 API 调用", yaxis_title="Tokens",
                      legend=dict(orientation="h", yanchor="bottom",
                                  y=1.02, xanchor="right", x=1))
-    st.plotly_chart(fg, use_container_width=True)
+    st.plotly_chart(fg, width='stretch')
 
 
 # ── Tab 6: Raw data ────────────────────────────────────────────
@@ -658,7 +658,7 @@ def _tab_raw(df: pd.DataFrame) -> None:
                      "file_path", "input_tokens", "output_tokens", "duration_ms", "status"]
                     if c in dr.columns]
     st.dataframe(dr[display_cols].reset_index(drop=True),
-                 use_container_width=True, height=500)
+                 width='stretch', height=500)
     st.download_button(
         "导出 CSV",
         dr[display_cols].to_csv(index=False).encode("utf-8"),

@@ -159,7 +159,7 @@ def _sidebar() -> tuple[
         st.divider()
 
         # 解析按钮
-        if st.button("🔍 开始对比分析", type="primary", use_container_width=True):
+        if st.button("🔍 开始对比分析", type="primary", width='stretch'):
             if content_a is None or content_b is None:
                 st.error("请先提供两个文件")
                 st.stop()
@@ -446,7 +446,7 @@ def _overlay_token_trend(
             font=dict(size=11),
         ),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -529,7 +529,7 @@ def _per_turn_comparison(
         bargap=0.15,
         bargroupgap=0.05,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -583,7 +583,7 @@ def _tool_comparison(
     st.dataframe(
         pd.DataFrame(rows),
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         column_config={
             "Δ 次数": st.column_config.Column(width="small"),
             "Δ Token": st.column_config.Column(width="small"),
@@ -651,7 +651,7 @@ def _tool_count_chart(
         yaxis=dict(autorange="reversed"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def _token_saving_breakdown(
@@ -696,7 +696,7 @@ def _token_saving_breakdown(
         margin=dict(t=10, b=0),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -740,7 +740,7 @@ def _detail_table(
     st.dataframe(
         pd.DataFrame(rows),
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         height=min(600, len(rows) * 35 + 38),
     )
 

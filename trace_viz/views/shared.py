@@ -309,24 +309,29 @@ def tool_efficiency_table(df_tools: pd.DataFrame) -> None:
         if col in eff.columns:
             eff[col] = eff[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "—")
 
-    st.dataframe(eff, hide_index=True, use_container_width=True)
+    st.dataframe(eff, hide_index=True, width='stretch')
 
 
 def tool_inspector(df_tools: pd.DataFrame) -> None:
     """Selectbox + 2-column detail view for a single tool call."""
     if df_tools.empty:
         return
-    selected = st.selectbox(
+    # 只用索引做选项，避免 to_dict(orient="records") 把全部 output 文本序列化到前端
+    n = len(df_tools)
+    idx = st.selectbox(
         "选择一次工具调用进行深度审查：",
-        options=df_tools.to_dict(orient="records"),
-        format_func=lambda x: (
-            f"[Turn {x['turn_no']}] #{x['call_idx'] + 1}  {x['name']}  |  "
-            f"{'❌ 错误' if x['is_error'] else '✅'}  |  "
-            f"{x['tiktoken_tokens']:,} tokens"
+        options=range(n),
+        format_func=lambda i: (
+            f"[Turn {df_tools.iloc[i]['turn_no']}] "
+            f"#{int(df_tools.iloc[i]['call_idx']) + 1}  "
+            f"{df_tools.iloc[i]['name']}  |  "
+            f"{'❌ 错误' if df_tools.iloc[i]['is_error'] else '✅'}  |  "
+            f"{int(df_tools.iloc[i]['tiktoken_tokens']):,} tokens"
         ),
     )
-    if not selected:
+    if idx is None:
         return
+    selected = df_tools.iloc[idx].to_dict()
     c1, c2 = st.columns([1, 2])
     with c1:
         st.info(f"**Turn:** {selected['turn_no']}")
@@ -344,7 +349,7 @@ def tool_inspector(df_tools: pd.DataFrame) -> None:
                 st.code(json.dumps(raw_input, ensure_ascii=False, indent=2), language="json")
     with c2:
         st.subheader("工具返回内容")
-        st.text_area("", value=selected.get("output", ""), height=360, label_visibility="collapsed")
+        st.text_area("工具输出", value=selected.get("output", ""), height=360, label_visibility="collapsed")
 
 
 # ── Generic raw-data tab ───────────────────────────────────────
@@ -384,10 +389,11 @@ def raw_events_tab(
             st.json(evt)
 
     st.divider()
-    export = "\n".join(json.dumps(e, ensure_ascii=False) for e in filtered)
-    st.download_button(
-        "导出筛选结果 NDJSON",
-        export.encode("utf-8"),
-        f"{key_prefix}_filtered.ndjson",
-        "application/x-ndjson",
-    )
+    if st.button("📥 生成导出文件", key=f"{key_prefix}_export_btn"):
+        export = "\n".join(json.dumps(e, ensure_ascii=False) for e in filtered)
+        st.download_button(
+            "下载筛选结果 NDJSON",
+            export.encode("utf-8"),
+            f"{key_prefix}_filtered.ndjson",
+            "application/x-ndjson",
+        )

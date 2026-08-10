@@ -166,7 +166,7 @@ def _build_dag_summary_table(nodes: list[dict], edges: list[dict]) -> None:
             "ID": n["id"],
         })
 
-    st.dataframe(rows, hide_index=True, use_container_width=True,
+    st.dataframe(rows, hide_index=True, width='stretch',
                  column_config={"ID": None})  # 隐藏 ID 列
 
 

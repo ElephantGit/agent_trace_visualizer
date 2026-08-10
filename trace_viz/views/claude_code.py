@@ -8,6 +8,7 @@ Supports two data sources:
 
 from __future__ import annotations
 
+import bisect
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,20 +52,29 @@ def render() -> None:
 
 def render_body(result: ParseResult) -> None:
     """Renders an already-parsed result, shared by the standalone and embedded flows."""
-    df_tools = _build_tools_df(result)
+    # ── 缓存衍生数据（避免每次交互重建所有 DataFrame）──────
+    cache_key = result.session_info.session_id or str(id(result))
+    if st.session_state.get("cc_cache_key") != cache_key:
+        st.session_state["cc_cache_key"] = cache_key
+        st.session_state["cc_df_tools"] = _build_tools_df(result)
+        df_turns = pd.DataFrame(
+            [t.__dict__ for t in result.turns]
+        ) if result.turns else pd.DataFrame()
+        st.session_state["cc_df_turns"] = df_turns
+        st.session_state["cc_df_turns_merged"] = _merge_consecutive_turns_df(df_turns)
+        # 清除 per-tab 缓存
+        st.session_state.pop("cc_mermaid_units", None)
+        st.session_state.pop("cc_mermaid_src", None)
+        st.session_state.pop("cc_timeline_df", None)
+
+    df_tools = st.session_state["cc_df_tools"]
+    df_turns_merged = st.session_state["cc_df_turns_merged"]
+    st.session_state["cc_raw_turn_count"] = len(st.session_state["cc_df_turns"])
+    is_transcript = result.parse_debug.get("format") == "transcript"
 
     _sidebar_meta(result)
     _metrics_row(result, df_tools)
     st.markdown("---")
-
-    is_transcript = result.parse_debug.get("format") == "transcript"
-    df_turns = pd.DataFrame([t.__dict__ for t in result.turns]) if result.turns else pd.DataFrame()
-
-    # 保存原始 Turn 数量，供 _tab_tokens 展示合并前后对比
-    st.session_state["cc_raw_turn_count"] = len(df_turns)
-
-    # 合并连续相同 input_tokens 的 Turn（消除链式工具调用的重复点）
-    df_turns_merged = _merge_consecutive_turns_df(df_turns)
 
     tabs = ["📜 会话回放", "总览", "Token 趋势", "工具执行", "🤖 Subagent", "成本分析", "原始数据"]
     if is_transcript:
@@ -121,27 +131,44 @@ def _sidebar_transcript() -> ParseResult | None:
             st.warning(f"目录不存在：`{root}`")
             return None
 
-        # Collect all JSONL files, sorted newest-first
-        all_files = sorted(
-            root.rglob("*.jsonl"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        # ── 缓存文件列表（避免每次 rerun 都 rglob + stat）─────
+        root_key = str(root.resolve())
+        cache_tag = st.session_state.get("cc_file_cache_tag", "")
+
+        if st.button("🔄 刷新文件列表", key="cc_refresh_files"):
+            st.session_state.pop("cc_file_cache", None)
+
+        if st.session_state.get("cc_file_cache_tag") != root_key:
+            # Rebuild cache
+            all_files = sorted(
+                root.rglob("*.jsonl"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+
+            def _label(p: Path) -> str:
+                try:
+                    rel = p.relative_to(root)
+                    mtime = datetime.fromtimestamp(p.stat().st_mtime)
+                    size = p.stat().st_size
+                    return f"{rel.parent.name[:20]}/{p.stem[:18]}  {mtime:%m-%d %H:%M}  {size//1024}KB"
+                except Exception:
+                    return str(p)
+
+            st.session_state["cc_file_cache"] = {
+                "files": all_files,
+                "labels": [_label(p) for p in all_files],
+            }
+            st.session_state["cc_file_cache_tag"] = root_key
+
+        cache = st.session_state["cc_file_cache"]
+        all_files: list[Path] = cache["files"]
+        labels: list[str] = cache["labels"]
+
         if not all_files:
             st.info("未找到 `.jsonl` 文件，请确认路径。")
             return None
 
-        # Build display labels: "<project-dir> / <filename>  (date)"
-        def _label(p: Path) -> str:
-            try:
-                rel   = p.relative_to(root)
-                mtime = datetime.fromtimestamp(p.stat().st_mtime)
-                size  = p.stat().st_size
-                return f"{rel.parent.name[:20]}/{p.stem[:18]}  {mtime:%m-%d %H:%M}  {size//1024}KB"
-            except Exception:
-                return str(p)
-
-        labels      = [_label(p) for p in all_files]
         chosen_label = st.selectbox(
             f"选择会话（共 {len(all_files)} 个）",
             labels,
@@ -150,7 +177,7 @@ def _sidebar_transcript() -> ParseResult | None:
         chosen_path = all_files[labels.index(chosen_label)]
         st.caption(str(chosen_path))
 
-        if st.button("加载此会话", type="primary", use_container_width=True):
+        if st.button("加载此会话", type="primary", width='stretch'):
             st.session_state["cc_content"] = chosen_path.read_bytes()
             st.session_state.pop("cc_result", None)
             st.rerun()
@@ -363,7 +390,7 @@ def _tab_overview(result: ParseResult, df_tools: pd.DataFrame) -> None:
         fig = px.pie(df_types, names="type", values="count", hole=0.4)
         fig.update_traces(textinfo="label+percent+value")
         fig.update_layout(showlegend=False, margin=dict(t=0, b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with col_r:
         st.subheader("工具调用分布")
@@ -375,7 +402,7 @@ def _tab_overview(result: ParseResult, df_tools: pd.DataFrame) -> None:
                           color_discrete_sequence=SAFE_PALETTE)
             fig2.update_layout(yaxis=dict(autorange="reversed"),
                                margin=dict(t=0, b=0), showlegend=False)
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
         else:
             st.info("暂无工具调用")
 
@@ -431,7 +458,7 @@ def _tab_subagents(result: ParseResult) -> None:
         })
 
     df_ov = pd.DataFrame(overview_rows)
-    st.dataframe(df_ov, hide_index=True, use_container_width=True)
+    st.dataframe(df_ov, hide_index=True, width='stretch')
 
     # 逐个展示详情
     st.divider()
@@ -501,7 +528,7 @@ def _tab_tokens(df_turns: pd.DataFrame) -> None:
     # 去掉 fill-to-zero —— Claude Code 的 input_tokens 不是累积增长
     fig.data[0].update(fill=None, name="Input Tokens")
     fig.update_layout(yaxis_title="Tokens（单次调用）")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.divider()
     st.subheader("Token 增量（上下文变化量）")
@@ -523,7 +550,7 @@ def _tab_tokens(df_turns: pd.DataFrame) -> None:
         margin=dict(t=10, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width='stretch')
 
     if "cache_read" in df_turns.columns and df_turns["cache_read"].sum() > 0:
         st.divider()
@@ -541,7 +568,7 @@ def _tab_tokens(df_turns: pd.DataFrame) -> None:
         fig_cache.update_layout(height=280, xaxis_title="有效数据点",
                                 yaxis_title="Cache Hit %",
                                 margin=dict(t=20, b=0), showlegend=False)
-        st.plotly_chart(fig_cache, use_container_width=True)
+        st.plotly_chart(fig_cache, width='stretch')
 
 
 # ── Tab 3: Timeline (transcript only) ─────────────────────────
@@ -567,7 +594,7 @@ def _tab_timeline(result: ParseResult) -> None:
     )
     fig_scatter.update_traces(marker=dict(size=10, opacity=0.8))
     fig_scatter.update_layout(height=240, showlegend=False, margin=dict(t=10, b=0))
-    st.plotly_chart(fig_scatter, use_container_width=True)
+    st.plotly_chart(fig_scatter, width='stretch')
 
     st.divider()
 
@@ -578,10 +605,10 @@ def _tab_timeline(result: ParseResult) -> None:
 
     latency_rows = []
     for i, at in enumerate(asst_ts):
-        # Find the last user message before this assistant message
-        prior = [ut for ut in user_ts if ut < at]
-        if prior:
-            delta_s = (at - max(prior)).total_seconds()
+        # 用 bisect 在已排序 user_ts 中找最近的前一条用户消息（O(log U) vs O(U)）
+        idx = bisect.bisect_left(user_ts, at)
+        if idx > 0:
+            delta_s = (at - user_ts[idx - 1]).total_seconds()
             latency_rows.append({"turn": i + 1, "延迟(s)": round(delta_s, 2)})
 
     if latency_rows:
@@ -596,7 +623,7 @@ def _tab_timeline(result: ParseResult) -> None:
             height=280, xaxis_title="LLM 推理轮次", yaxis_title="秒",
             margin=dict(t=20, b=0), showlegend=False,
         )
-        st.plotly_chart(fig_lat, use_container_width=True)
+        st.plotly_chart(fig_lat, width='stretch')
     else:
         st.info("轮次过少，无法计算延迟")
 
@@ -606,7 +633,7 @@ def _tab_timeline(result: ParseResult) -> None:
     st.subheader("事件时间明细")
     st.dataframe(
         df_tl.assign(timestamp=df_tl["timestamp"].dt.strftime("%H:%M:%S.%f").str[:-3]),
-        use_container_width=True, height=300,
+        width='stretch', height=300,
     )
 
 
@@ -626,11 +653,11 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
                     color_discrete_sequence=SAFE_PALETTE)
         fa.update_traces(textposition="outside")
         fa.update_layout(height=320, margin=dict(t=10, b=0), showlegend=False)
-        st.plotly_chart(fa, use_container_width=True)
+        st.plotly_chart(fa, width='stretch')
 
     with col_b:
         st.subheader("每次调用的输出大小（Tiktoken Tokens）")
-        st.plotly_chart(tool_tiktoken_fig(df_tools), use_container_width=True)
+        st.plotly_chart(tool_tiktoken_fig(df_tools), width='stretch')
 
     st.divider()
     st.subheader("工具效率汇总")
@@ -665,7 +692,7 @@ def _tab_cost(result: ParseResult, df_turns: pd.DataFrame) -> None:
                 )
                 fig_pie.update_traces(textinfo="label+percent+value")
                 fig_pie.update_layout(showlegend=False, margin=dict(t=0, b=0))
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width='stretch')
 
         with col_b:
             st.subheader("数据明细")
@@ -690,7 +717,7 @@ def _tab_cost(result: ParseResult, df_turns: pd.DataFrame) -> None:
             "tool_count": "工具调用数", "stop_reason": "StopReason",
         }
         disp = df_turns[[c for c in disp_cols if c in df_turns.columns]].rename(columns=disp_cols)
-        st.dataframe(disp, use_container_width=True)
+        st.dataframe(disp, width='stretch')
 
 
 # ── Tab 7: Raw data ────────────────────────────────────────────

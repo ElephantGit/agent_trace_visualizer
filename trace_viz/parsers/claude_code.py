@@ -200,162 +200,219 @@ def _sj_flatten_tool_calls(
 # FORMAT 2 — transcript JSONL  (~/.claude/projects/*/*.jsonl)
 # ══════════════════════════════════════════════════════════════
 
+# Subagent tool names shared between transcript and stream-json parsers
+_SUBAGENT_TOOL_NAMES = {"task", "Task", "agent", "Agent", "delegate"}
+
+
 def _parse_transcript(raw_events: list[dict]) -> ParseResult:
-    """Parse the persistent JSONL transcripts saved by interactive sessions."""
+    """Parse the persistent JSONL transcripts saved by interactive sessions.
 
-    # ── Session metadata from any event ───────────────────────
-    session_id = next((e.get("sessionId", "") for e in raw_events if e.get("sessionId")), "")
-    cwd        = next((e.get("cwd",       "") for e in raw_events if e.get("cwd")),       "")
-    version    = next((e.get("version",   "") for e in raw_events if e.get("version")),   "")
-
-    tool_map: dict[str, dict] = {}   # tool_use id → record
+    Merged-pass version: single traversal of raw_events builds turns, tool_map,
+    tool_calls, subagents, timestamps, and session metadata in one go.
+    """
+    tool_map: dict[str, dict] = {}       # tool_use id → record
     turns:      list[Turn]     = []
     model = ""
+    session_id = ""
+    cwd = ""
+    version = ""
+    timestamps: list[str] = []
 
-    # ── Pass 1: assistant messages → turns + tool_use entries ─
+    # Subagent extraction state (inline, avoids separate _extract_subagents_cc passes)
+    tool_results_raw: dict[str, dict] = {}  # tid → {output, is_error}
+    subagents: list[dict] = []
+
+    # ── Single pass ──────────────────────────────────────────────
     for evt in raw_events:
-        if evt.get("type") != "assistant":
-            continue
-        msg = evt.get("message", {})
-        if not isinstance(msg, dict):
-            continue
+        etype = evt.get("type", "")
 
-        usage    = msg.get("usage", {})
-        turn_no  = len(turns) + 1
-        if not model:
-            model = msg.get("model", "")
+        # Session metadata (first wins)
+        if not session_id:
+            session_id = evt.get("sessionId", "")
+        if not cwd:
+            cwd = evt.get("cwd", "")
+        if not version:
+            version = evt.get("version", "")
 
-        text_parts, tool_count = [], 0
-        raw_content = msg.get("content", [])
-        # content may be a plain string, a list of dicts, or a list of strings
-        if isinstance(raw_content, str):
-            raw_content = [{"type": "text", "text": raw_content}]
-        for block in raw_content:
-            if isinstance(block, str):
-                text_parts.append(block)
+        # Timestamps for duration calculation
+        ts = evt.get("timestamp")
+        if ts:
+            timestamps.append(ts)
+
+        # ── Assistant messages → turns + tool_use entries ──────
+        if etype == "assistant":
+            msg = evt.get("message", {})
+            if not isinstance(msg, dict):
                 continue
-            if not isinstance(block, dict):
-                continue
-            btype = block.get("type", "")
-            if btype == "text":
-                text_parts.append(block.get("text", ""))
-            elif btype == "tool_use":
-                tool_count += 1
-                tid = block.get("id", "")
-                tool_map[tid] = {
-                    "id":        tid,
-                    "name":      block.get("name", ""),
-                    "input":     block.get("input") or {},
-                    "turn_no":   turn_no,
-                    "call_idx":  len(tool_map),
-                    "output":    None,
-                    "is_error":  False,
-                    # timestamps from the wrapping event
-                    "ts_start":  evt.get("timestamp"),
-                    "ts_end":    None,
-                }
 
-        turns.append(Turn(
-            turn_no=turn_no,
-            input_tokens=usage.get("input_tokens", 0) or 0,
-            output_tokens=usage.get("output_tokens", 0) or 0,
-            cache_read=usage.get("cache_read_input_tokens", 0) or 0,
-            cache_creation=usage.get("cache_creation_input_tokens", 0) or 0,
-            stop_reason=msg.get("stop_reason", ""),
-            text_content="\n".join(text_parts),
-            tool_count=tool_count,
-            model=msg.get("model", ""),
+            usage    = msg.get("usage", {})
+            turn_no  = len(turns) + 1
+            if not model:
+                model = msg.get("model", "")
+
+            text_parts, tool_count = [], 0
+            raw_content = msg.get("content", [])
+            if isinstance(raw_content, str):
+                raw_content = [{"type": "text", "text": raw_content}]
+            for block in raw_content:
+                if isinstance(block, str):
+                    text_parts.append(block)
+                    continue
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type", "")
+                if btype == "text":
+                    text_parts.append(block.get("text", ""))
+                elif btype == "tool_use":
+                    tool_count += 1
+                    tid = block.get("id", "")
+                    name = block.get("name", "")
+                    inp = block.get("input") or {}
+
+                    tool_map[tid] = {
+                        "id": tid, "name": name, "input": inp,
+                        "turn_no": turn_no, "call_idx": len(tool_map),
+                        "output": None, "is_error": False,
+                        "ts_start": ts, "ts_end": None,
+                    }
+
+                    # Inline subagent detection
+                    if name in _SUBAGENT_TOOL_NAMES and isinstance(inp, dict):
+                        subagents.append({
+                            "childSessionID": "",
+                            "agentName": (
+                                inp.get("subagent_type", "")
+                                or inp.get("agent_type", "")
+                                or name
+                            ),
+                            "description": (
+                                inp.get("description", "")
+                                or inp.get("prompt", "")
+                                or inp.get("task", "")
+                            ),
+                            "state": "running",  # will update when result found
+                            "globalStep": turn_no,
+                            "ts": 0,
+                            "dispatchDurationMs": None,
+                            "_tid": tid,  # internal: for result matching
+                        })
+
+            turns.append(Turn(
+                turn_no=turn_no,
+                input_tokens=usage.get("input_tokens", 0) or 0,
+                output_tokens=usage.get("output_tokens", 0) or 0,
+                cache_read=usage.get("cache_read_input_tokens", 0) or 0,
+                cache_creation=usage.get("cache_creation_input_tokens", 0) or 0,
+                stop_reason=msg.get("stop_reason", ""),
+                text_content="\n".join(text_parts),
+                tool_count=tool_count,
+                model=msg.get("model", ""),
+            ))
+            continue
+
+        # ── User messages → tool_result matching + subagent state update ──
+        if etype == "user":
+            msg = evt.get("message") or {}
+            if not isinstance(msg, dict):
+                continue
+            raw_content = msg.get("content", [])
+            if isinstance(raw_content, str):
+                continue
+            for block in raw_content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") != "tool_result":
+                    continue
+                tid = (block.get("tool_use_id")
+                       or block.get("toolUseId")
+                       or "")
+                raw = block.get("content", "")
+                if isinstance(raw, list):
+                    raw = "\n".join(
+                        (c.get("text", str(c)) if isinstance(c, dict) else str(c))
+                        for c in raw
+                    )
+                output_text = to_str(raw)
+                is_err = bool(block.get("is_error", False))
+
+                # Match to tool_map
+                if tid in tool_map:
+                    tool_map[tid]["output"]   = output_text
+                    tool_map[tid]["is_error"] = is_err
+                    tool_map[tid]["ts_end"]   = ts
+
+                # Update matching subagent state
+                for sub in subagents:
+                    if sub.get("_tid") == tid:
+                        sub["state"] = "error" if is_err else "completed"
+                        # Try to extract child session ID from output
+                        import re
+                        m = re.search(
+                            r'(?:session[_\s]?id[:\s]+|task[_\s]?id[:\s]+)'
+                            r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
+                            output_text, re.IGNORECASE,
+                        )
+                        if m:
+                            sub["childSessionID"] = m.group(1)
+                        break
+            continue
+
+        # ── Top-level tool_result events ─────────────────────────
+        if etype == "tool_result":
+            tid = evt.get("tool_use_id", "") or evt.get("toolUseId", "")
+            raw_output = evt.get("content", "")
+            if isinstance(raw_output, list):
+                raw_output = "\n".join(
+                    (c.get("text", str(c)) if isinstance(c, dict) else str(c))
+                    for c in raw_output
+                )
+            output_text = to_str(raw_output)
+            is_err = bool(evt.get("isError") or evt.get("is_error", False))
+
+            if tid in tool_map:
+                tool_map[tid]["output"]   = output_text
+                tool_map[tid]["is_error"] = is_err
+                tool_map[tid]["ts_end"]   = ts
+
+    # ── Clean up subagent internal fields ─────────────────────────
+    for sub in subagents:
+        sub.pop("_tid", None)
+
+    # ── Flatten tool calls from tool_map ─────────────────────────
+    tool_calls: list[ToolCall] = []
+    for tc in tool_map.values():
+        text = to_str(tc.get("output") or "")
+        tool_calls.append(ToolCall(
+            name=tc["name"], input=tc["input"], output=text,
+            is_error=tc["is_error"], turn_no=tc["turn_no"],
+            call_idx=tc["call_idx"],
+            tiktoken_tokens=count_tokens(text),
+            output_chars=len(text),
+            duration_ms=_ts_delta_ms(tc.get("ts_start"), tc.get("ts_end")),
         ))
 
-    # ── Pass 2: tool_result blocks nested inside user messages ──
-    # Transcript JSONL uses the same structure as stream-json:
-    # tool results are wrapped inside type:"user" message.content blocks.
-    # The "tool_use_id" key may be snake_case or camelCase depending on version.
-    for evt in raw_events:
-        if evt.get("type") != "user":
-            continue
-        evt_ts = evt.get("timestamp")  # timestamp for this tool result delivery
-        msg    = evt.get("message") or {}
-        if not isinstance(msg, dict):
-            continue
-        raw_content = msg.get("content", [])
-        if isinstance(raw_content, str):
-            continue
-        for block in raw_content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") != "tool_result":
-                continue
-            # Support both naming conventions
-            tid = (block.get("tool_use_id")
-                   or block.get("toolUseId")
-                   or "")
-            if tid not in tool_map:
-                continue
-            raw = block.get("content", "")
-            if isinstance(raw, list):
-                raw = "\n".join(
-                    (c.get("text", str(c)) if isinstance(c, dict) else str(c))
-                    for c in raw
-                )
-            tool_map[tid]["output"]   = to_str(raw)
-            tool_map[tid]["is_error"] = bool(block.get("is_error", False))
-            tool_map[tid]["ts_end"]   = evt_ts
-
-    # ── Flatten tool calls in stream order ─────────────────────
-    tool_calls, seen = [], set()
-    for evt in raw_events:
-        if evt.get("type") != "assistant":
-            continue
-        for block in evt.get("message", {}).get("content", []):
-            if block.get("type") != "tool_use":
-                continue
-            tid = block.get("id", "")
-            if tid in seen or tid not in tool_map:
-                continue
-            seen.add(tid)
-            tc   = tool_map[tid]
-            text = to_str(tc.get("output") or "")
-            tool_calls.append(ToolCall(
-                name=tc["name"], input=tc["input"], output=text,
-                is_error=tc["is_error"], turn_no=tc["turn_no"],
-                call_idx=tc["call_idx"],
-                tiktoken_tokens=count_tokens(text),
-                output_chars=len(text),
-                duration_ms=_ts_delta_ms(tc.get("ts_start"), tc.get("ts_end")),
-            ))
-
-    # ── Result info ────────────────────────────────────────────
+    # ── Result info ──────────────────────────────────────────────
     result_info = ResultInfo(num_turns=len(turns))
     if turns:
-        # transcript 模式下每次 assistant event 的 usage 字段是当次调用的实际值，
-        # 并非累积量；这里对所有 turn 求和以反映 session 总用量
         result_info.total_input  = sum(t.input_tokens for t in turns)
         result_info.total_output = sum(t.output_tokens for t in turns)
         result_info.total_cache_read     = sum(t.cache_read for t in turns)
         result_info.total_cache_creation = sum(t.cache_creation for t in turns)
 
-    timestamps = [e.get("timestamp") for e in raw_events if e.get("timestamp")]
     if len(timestamps) >= 2:
-        result_info.duration_ms = int(
-            _ts_delta_ms(timestamps[0], timestamps[-1])
-        )
-
-    session_info = SessionInfo(
-        model=model,
-        session_id=session_id,
-        title=cwd,          # repurpose title to show the working directory
-        tools_available=[],
-    )
+        result_info.duration_ms = int(_ts_delta_ms(timestamps[0], timestamps[-1]))
 
     return ParseResult(
         source="claude_code",
         raw_events=raw_events,
-        session_info=session_info,
+        session_info=SessionInfo(
+            model=model, session_id=session_id,
+            title=cwd, tools_available=[],
+        ),
         result_info=result_info,
         turns=turns,
         tool_calls=tool_calls,
-        subagents=_extract_subagents_cc(raw_events),
+        subagents=subagents,
         parse_debug={"format": "transcript", "cwd": cwd, "version": version},
     )
 
@@ -364,11 +421,7 @@ def _parse_transcript(raw_events: list[dict]) -> ParseResult:
 
 # Claude Code 目前不发出独立 subagent 事件。子代理派发体现为普通的
 # tool_use (name = "task" / "Task")，描述和类型编码在 input 字段里。
-# 本函数从 assistant/user 事件对中提取 subagent 信息，产出与
-# opencode parser 的 _extract_subagents 一致的数据结构。
-
-_SUBAGENT_TOOL_NAMES = {"task", "Task", "agent", "Agent", "delegate"}
-
+# _SUBAGENT_TOOL_NAMES 定义在上述 FORMAT 2 section 开头。
 
 def _extract_subagents_cc(raw_events: list[dict]) -> list[dict]:
     """从 Claude Code raw_events 中提取 task 工具派发的 subagent 信息。"""
