@@ -95,6 +95,11 @@ streamlit run app.py
 Pick a format on the landing page (Opencode / Gemini CLI / Claude Code) and
 either upload a file or, for Claude Code, browse `~/.claude/projects`.
 
+The checked-in `.streamlit/config.toml` keeps the dashboard loopback-only and
+applies the iframe-safe upload settings automatically. Do not expose this
+server beyond the local machine because CORS and XSRF protection are disabled
+for the embedded upload flow.
+
 ## Embedded usage (Ora integration)
 
 When Ora's desktop app iframes this dashboard it opens:
@@ -115,19 +120,17 @@ The app computes that locator root by OS convention (the Ora Tauri identifier
 `agent_type`, and renders. The private agent session id never leaves Ora's
 backend; only the resolved file path crosses to the dashboard.
 
-The dashboard server itself is **externally managed** — you start Streamlit:
+The dashboard server itself is **externally managed** — you start Streamlit.
+The repository config already applies the required local iframe settings, so
+the short command is sufficient:
 
 ```bash
-streamlit run app.py \
-  --server.port 8601 \
-  --server.headless true \
-  --server.enableCORS false \
-  --server.enableXsrfProtection false \
-  --browser.gatherUsageStats false
+streamlit run app.py
 ```
 
-(the `enableCORS`/`enableXsrfProtection` flags are required for the iframe to
-load). Ora only knows the configured host:port and embeds it.
+The equivalent CLI flags are still useful when overriding a different config,
+but `enableCORS=false` and `enableXsrfProtection=false` must be retained for
+iframe uploads. Ora only knows the configured host:port and embeds it.
 
 ## Project layout
 

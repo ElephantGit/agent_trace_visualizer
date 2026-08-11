@@ -1,0 +1,13 @@
+# The dashboard is embedded in a local iframe, so Streamlit's default
+# cross-origin and XSRF checks reject file-upload requests from the parent UI.
+# Keep the server loopback-only because those protections are intentionally
+# disabled for this local integration mode.
+[server]
+address = "127.0.0.1"
+port = 8601
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
