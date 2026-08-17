@@ -9,8 +9,15 @@ env/
 # Streamlit
 .streamlit/*
 !.streamlit/
-!.streamlit/config.toml
+!**/.streamlit/config.toml
 streamlit.log
+
+# Rust
+backend/target/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
 
 # OS / editor
 .DS_Store

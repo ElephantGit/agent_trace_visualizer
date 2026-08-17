@@ -1,0 +1,18 @@
+{"type": "session.start", "ts": 1700000000000, "model": "anthropic/claude-sonnet-4-20250514", "sessionID": "ses_main", "title": "refactor dashboard"}
+{"type": "step.start", "ts": 1700000000010, "globalStep": 1}
+{"type": "text.user", "ts": 1700000000020, "globalStep": 1, "text": "refactor this"}
+{"type": "tool.start", "ts": 1700000000030, "globalStep": 1, "tool": "task", "toolCallId": "tc_start_a", "args": {"subagent_type": "general-purpose", "description": "Explore the codebase"}}
+{"type": "tool.finish", "ts": 1700000000530, "globalStep": 1, "tool": "task", "toolCallId": "tc_end_mismatch", "output": "<task id=\"ses_child123\" state=\"completed\">done</task>", "outputSize": 20, "isError": false, "duration": 500}
+{"type": "step.finish", "ts": 1700000000540, "globalStep": 1, "cumTokens": {"input": 1000, "output": 100}, "tokens": {"input": 1000, "output": 100, "reasoning": 50, "cacheRead": 300, "cacheWrite": 20}, "reason": "end_turn"}
+{"type": "step.start", "ts": 1700000000550, "globalStep": 2}
+{"type": "tool.start", "ts": 1700000000560, "globalStep": 2, "tool": "read", "toolCallId": "tc_r1", "args": {"file_path": "src/lib.rs"}}
+{"type": "tool.start", "ts": 1700000000561, "globalStep": 2, "tool": "write", "toolCallId": "tc_w1", "args": {"file_path": "src/out.rs"}}
+{"type": "tool.finish", "ts": 1700000000660, "globalStep": 2, "tool": "read", "toolCallId": "tc_r1", "output": "fn main() {} pub fn add(a: i32, b: i32) -> i32 { a + b }", "outputSize": 57, "isError": false, "duration": 100}
+{"type": "tool.finish", "ts": 1700000000700, "globalStep": 2, "tool": "write", "toolCallId": "tc_w1", "output": "wrote file", "outputSize": 10, "isError": false, "duration": 139}
+{"type": "step.finish", "ts": 1700000000710, "globalStep": 2, "cumTokens": {"input": 1600, "output": 250}, "tokens": {"input": 600, "output": 150, "reasoning": 80, "cacheRead": 500, "cacheWrite": 10}, "reason": "end_turn"}
+{"type": "step.start", "ts": 1700000000720, "globalStep": 3}
+{"type": "tool.start", "ts": 1700000000730, "globalStep": 3, "tool": "task", "toolCallId": "tc_start_b", "args": {"subagent_type": "Explore", "description": "find call sites"}}
+{"type": "tool.start", "ts": 1700000000740, "globalStep": 3, "tool": "grep", "toolCallId": "tc_g1", "args": {"pattern": "TODO"}}
+{"type": "tool.finish", "ts": 1700000000790, "globalStep": 3, "tool": "grep", "toolCallId": "tc_g1", "output": "src/main.rs:12: TODO fix", "outputSize": 25, "isError": false, "duration": 50}
+{"type": "step.finish", "ts": 1700000000800, "globalStep": 3, "cumTokens": {"input": 1800, "output": 300}, "tokens": {"input": 200, "output": 50, "reasoning": 20, "cacheRead": 150, "cacheWrite": 0}, "reason": "end_turn"}
+{"type": "session.end", "ts": 1700000000810, "totalTokens": {"input": 1800, "output": 300}}

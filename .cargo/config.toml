@@ -1,0 +1,8 @@
+# Project-level registry config. rsproxy.cn is used because the global
+# (~/.cargo/config.toml) USTC mirror was returning 302s that break the
+# sparse index protocol. Project config takes precedence over user config.
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"

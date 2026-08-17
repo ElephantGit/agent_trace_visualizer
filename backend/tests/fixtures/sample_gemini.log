@@ -1,0 +1,15 @@
+{"attributes": {"event.name": "gen_ai.client.request", "event.timestamp": "2025-06-02T09:00:00.000Z", "model": "gemini-2.5-pro", "gen_ai.usage.input_tokens": 400, "gen_ai.usage.output_tokens": 50, "session_id": "g1", "status": true}, "_body": "request body"}
+{"attributes": {"event.name": "gemini_cli.tool_call", "event.timestamp": "2025-06-02T09:00:01.000Z", "function_name": "read_file", "tool_name": "read_file", "file_path": "/tmp/a.rs", "duration_ms": 12.5, "status": "success"}, "_body": "call body"}
+{
+  "attributes": {
+    "event.name": "tool_call_response",
+    "event.timestamp": "2025-06-02T09:00:02.000Z",
+    "function_response_tokens": 80,
+    "response_tokens": 80
+  },
+  "_body": "response body"
+}
+{"attributes": {"event.name": "gemini_cli.config.loaded", "event.timestamp": "2025-06-02T09:00:03.000Z", "key": "value"}}
+{"attributes": {"event.name": "billing", "event.timestamp": "2025-06-02T09:00:04.000Z", "input_tokens": 10}}
+{"attributes": {"event.name": "gen_ai.client.request", "event.timestamp": "2025-06-02T09:00:05.000Z", "model": "gemini-2.5-pro", "gen_ai.usage.input_tokens": 200, "gen_ai.usage.output_tokens": 25, "gen_ai.output.messages": "{\"tool\": {\"name\": \"write_file\"}, \"response\": {\"contentLength\": 42}}"}}
+{"attributes": {"event.name": "gen_ai.client.request", "broken": }}
