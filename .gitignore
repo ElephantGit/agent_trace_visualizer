@@ -7,7 +7,9 @@ venv/
 env/
 
 # Streamlit
-.streamlit/
+.streamlit/*
+!.streamlit/
+!.streamlit/config.toml
 streamlit.log
 
 # OS / editor
@@ -15,3 +17,7 @@ streamlit.log
 Thumbs.db
 .idea/
 .vscode/
+
+
+# assets
+assets/reactflow.json

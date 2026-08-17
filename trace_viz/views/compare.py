@@ -101,9 +101,11 @@ def _sidebar() -> tuple[
         # Agent 类型选择
         agent_keys = list(PARSER_MAP.keys())
         agent_labels = [v[0] for v in PARSER_MAP.values()]
+        default_idx = agent_keys.index("claude_code") if "claude_code" in agent_keys else 0
         agent_type = st.selectbox(
             "Agent 类型",
             agent_keys,
+            index=default_idx,
             format_func=lambda k: dict(zip(agent_keys, agent_labels))[k],
             key="cmp_agent_type",
         )
@@ -159,7 +161,7 @@ def _sidebar() -> tuple[
         st.divider()
 
         # 解析按钮
-        if st.button("🔍 开始对比分析", type="primary", use_container_width=True):
+        if st.button("🔍 开始对比分析", type="primary", width='stretch'):
             if content_a is None or content_b is None:
                 st.error("请先提供两个文件")
                 st.stop()
@@ -238,6 +240,12 @@ def _summary_metrics(
     out_b = float(ri_b.total_output or sum(t.output_tokens for t in result_b.turns))
     if out_a or out_b:
         metrics.append(("总 Output Tokens", out_a, out_b, "int", True))
+
+    # Total Tokens（Input + Output）
+    tot_a = in_a + out_a
+    tot_b = in_b + out_b
+    if tot_a or tot_b:
+        metrics.append(("总 Tokens（In + Out）", tot_a, tot_b, "int", True))
 
     # Total Cost
     cost_a = float(ri_a.total_cost_usd or 0)
@@ -446,7 +454,7 @@ def _overlay_token_trend(
             font=dict(size=11),
         ),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -529,7 +537,7 @@ def _per_turn_comparison(
         bargap=0.15,
         bargroupgap=0.05,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -583,7 +591,7 @@ def _tool_comparison(
     st.dataframe(
         pd.DataFrame(rows),
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         column_config={
             "Δ 次数": st.column_config.Column(width="small"),
             "Δ Token": st.column_config.Column(width="small"),
@@ -651,7 +659,7 @@ def _tool_count_chart(
         yaxis=dict(autorange="reversed"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def _token_saving_breakdown(
@@ -696,7 +704,7 @@ def _token_saving_breakdown(
         margin=dict(t=10, b=0),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -740,7 +748,7 @@ def _detail_table(
     st.dataframe(
         pd.DataFrame(rows),
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         height=min(600, len(rows) * 35 + 38),
     )
 

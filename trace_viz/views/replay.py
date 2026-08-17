@@ -14,12 +14,18 @@ from __future__ import annotations
 
 import html as html_mod
 import json
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
 import streamlit as st
 
+from trace_viz.models import WorkflowNode
 from trace_viz.utils import to_str
+
+# ── 性能相关常量 ──────────────────────────────────────────────
+PAGE_SIZE = 50                # 每页渲染的步骤数
+CONTENT_MAX_LENGTH = 500      # 卡片中嵌入的最大内容长度（字符）
 
 # ── 回放步骤分类 ─────────────────────────────────────────────
 # 每个 category 有 bg（卡片背景色）和 header_bg（标题栏色，更深）
@@ -141,12 +147,51 @@ class ReplayStep:
 
 # ── 渲染入口 ─────────────────────────────────────────────────
 
-def render_replay(steps: list[ReplayStep], *, title: str = "📜 会话回放") -> None:
-    """渲染完整的会话回放视图。"""
+def render_replay(
+    steps: list[ReplayStep],
+    *,
+    title: str = "📜 会话回放",
+    workflow_root: WorkflowNode | None = None,
+) -> None:
+    """渲染完整的会话回放视图。
+
+    Args:
+        steps: 事件级回放步骤列表
+        title: 回放区域标题
+        workflow_root: 可选的工作流树根节点，提供后会在页面顶部增加
+                       "事件回放 / 工作流视图" 切换开关
+    """
     if not steps:
         st.info("暂无会话事件可供回放。")
         return
 
+    # ── 视图模式切换 ────────────────────────────────────────
+    # 始终显示切换开关：ReactFlow JSON 可能独立于 trace 存在
+    view_mode = st.radio(
+        "视图模式",
+        options=["📜 事件回放", "🔀 工作流视图"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="replay_view_mode",
+    )
+
+    if view_mode == "🔀 工作流视图":
+        from trace_viz.views.workflow import load_reactflow_json, render_workflow
+
+        # ReactFlow JSON 优先，trace 提取树作为 fallback
+        rf_data = load_reactflow_json()
+        if rf_data is not None:
+            render_workflow(workflow_root, reactflow_data=rf_data)
+        elif workflow_root is not None and workflow_root.children:
+            render_workflow(workflow_root)
+        else:
+            st.info(
+                "未找到工作流定义。请将 ReactFlow JSON 放置到 `assets/reactflow.json`，"
+                "或加载包含 subagent 派发的 trace 文件。"
+            )
+        return
+
+    # ── 原有事件回放逻辑 ─────────────────────────────────────
     st.markdown(f"### {title}")
     st.caption(f"共 {len(steps)} 个步骤 — 不同颜色代表不同事件类型")
 
@@ -159,8 +204,43 @@ def render_replay(steps: list[ReplayStep], *, title: str = "📜 会话回放") 
     if filtered is None:
         return
 
-    # ── 全部步骤一次性渲染 ────────────────────────────────
-    _render_step_list(filtered)
+    # ── 分页 ──────────────────────────────────────────────
+    total_pages = max(1, math.ceil(len(filtered) / PAGE_SIZE))
+    page_key = f"replay_page_{title}"
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 1
+    page = st.session_state[page_key]
+
+    # 页码超出范围时修正
+    if page > total_pages:
+        st.session_state[page_key] = total_pages
+        page = total_pages
+
+    start = (page - 1) * PAGE_SIZE
+    page_steps = filtered[start:start + PAGE_SIZE]
+
+    # ── 分页控件 ──────────────────────────────────────────
+    if total_pages > 1:
+        c_prev, c_info, c_next = st.columns([1, 2, 1])
+        with c_prev:
+            if st.button("◀ 上一页", disabled=(page <= 1), key=f"{page_key}_prev",
+                         width='stretch'):
+                st.session_state[page_key] = page - 1
+                st.rerun()
+        with c_info:
+            st.markdown(
+                f'<div style="text-align:center;padding-top:4px;font-size:0.9em;'
+                f'color:#64748b;">第 <b>{page}</b> / {total_pages} 页'
+                f'（{start + 1}–{min(start + PAGE_SIZE, len(filtered))} / 共 {len(filtered)} 条）</div>',
+                unsafe_allow_html=True,
+            )
+        with c_next:
+            if st.button("下一页 ▶", disabled=(page >= total_pages), key=f"{page_key}_next",
+                         width='stretch'):
+                st.session_state[page_key] = page + 1
+                st.rerun()
+
+    _render_step_list(page_steps)
 
 
 # ── 图例 ─────────────────────────────────────────────────────
@@ -258,18 +338,15 @@ def _render_step_list(steps: list[ReplayStep]) -> None:
 # ── 单步骤卡片构建 ──────────────────────────────────────────
 
 def _build_step_card(step: ReplayStep, idx: int) -> str:
-    """构建一个完整的步骤卡片 HTML。
+    """构建一个步骤卡片 HTML（内容截断以控制 HTML 体积）。
 
-    使用 <details> + <summary> 实现原生折叠：
-    - 标题栏（summary）带类型背景色，折叠时就看得到颜色
-    - 内容区用更浅的卡片底色
-    - 短内容默认展开（open 属性），长内容默认折叠
+    使用 <details> + <summary> 实现原生折叠。
+    长内容（>CONTENT_MAX_LENGTH）只显示预览，不在 HTML 中嵌入全文。
     """
     s = step.style
     content_len = len(step.content) if step.content else 0
-    has_detail = bool(step.detail and any(v for k, v in step.detail.items()
-                                          if k not in ("model", "stop_reason") and v))
     needs_fold = content_len > 300
+    too_large = content_len > CONTENT_MAX_LENGTH
 
     # ── 特殊角标 ─────────────────────────────────────────
     badge_html = ""
@@ -335,7 +412,7 @@ def _build_step_card(step: ReplayStep, idx: int) -> str:
     # ── 内容区 ───────────────────────────────────────────
     content_html = ""
 
-    # 工具名称 + 输入参数
+    # 工具名称 + 输入参数（截断 JSON）
     tool_name = step.detail.get("tool_name", "")
     tool_input = step.detail.get("tool_input")
     if tool_name or (tool_input and isinstance(tool_input, dict) and tool_input):
@@ -346,6 +423,9 @@ def _build_step_card(step: ReplayStep, idx: int) -> str:
             content_html += f'<span style="font-weight:600;">🔧 {html_mod.escape(tool_name)}</span>'
         if tool_input and isinstance(tool_input, dict) and tool_input:
             inp_json = json.dumps(tool_input, ensure_ascii=False, indent=2)
+            inp_len = len(inp_json)
+            if inp_len > 2000:
+                inp_json = inp_json[:2000] + "\n… (输入过长，已截断)"
             content_html += (
                 f'<details style="margin-top:6px;">'
                 f'<summary style="cursor:pointer;color:{s["border"]};font-size:0.88em;">📥 输入参数</summary>'
@@ -379,12 +459,22 @@ def _build_step_card(step: ReplayStep, idx: int) -> str:
             f'</div>'
         )
 
-    # 主要内容
+    # 主要内容（截断策略）
     if step.content:
-        text_escaped = html_mod.escape(step.content)
-        if content_len > 300:
-            # 长内容：显示前150字 + 嵌套折叠
+        if too_large:
+            # 超大内容：只显示预览，不嵌入全文到 HTML
+            preview = html_mod.escape(step.content[:200])
+            content_html += (
+                f'<span style="color:#334155;font-size:0.88em;line-height:1.6;'
+                f'white-space:pre-wrap;word-break:break-word;">{preview}…</span>'
+                f'<div style="margin-top:4px;color:#94a3b8;font-size:0.78em;">'
+                f'⚠️ 内容过长（{content_len:,} 字符），请在「原始数据」Tab 查看完整内容'
+                f'</div>'
+            )
+        elif content_len > 300:
+            # 中等内容：折叠嵌入
             preview = html_mod.escape(step.content[:150])
+            text_escaped = html_mod.escape(step.content)
             content_html += (
                 f'<span style="color:#334155;font-size:0.88em;line-height:1.6;'
                 f'white-space:pre-wrap;word-break:break-word;">{preview}…</span>'
@@ -400,6 +490,8 @@ def _build_step_card(step: ReplayStep, idx: int) -> str:
                 f'</details>'
             )
         else:
+            # 短内容：直接展示
+            text_escaped = html_mod.escape(step.content)
             content_html += (
                 f'<div style="color:#334155;font-size:0.88em;line-height:1.6;'
                 f'white-space:pre-wrap;word-break:break-word;">'
@@ -436,9 +528,11 @@ def _build_step_card(step: ReplayStep, idx: int) -> str:
     return card_html
 
 
-# ══════════════════════════════════════════════════════════════
-# 适配器：Claude Code raw_events → ReplayStep
-# ══════════════════════════════════════════════════════════════
+def _truncate(text: str, max_len: int = CONTENT_MAX_LENGTH) -> str:
+    """截断过长文本以控制内存和 HTML 体积。"""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "…"
 
 def claude_code_to_replay_steps(
     raw_events: list[dict],
@@ -606,7 +700,7 @@ def claude_code_to_replay_steps(
                         seq=seq,
                         category=cat,
                         title=short_output or "(空输出)",
-                        content=output_text,
+                        content=_truncate(output_text),
                         turn_no=current_turn,
                         is_error=is_err,
                         detail={
@@ -680,7 +774,7 @@ def claude_code_to_replay_steps(
                 seq=seq,
                 category=cat,
                 title=output_text[:100].replace("\n", " "),
-                content=output_text,
+                content=_truncate(output_text),
                 turn_no=current_turn,
                 is_error=is_err,
             ))
@@ -811,7 +905,7 @@ def opencode_to_replay_steps(
                 seq=seq,
                 category=cat,
                 title=title,
-                content=output_text,
+                content=_truncate(output_text),
                 turn_no=current_step,
                 is_error=is_err,
                 detail={

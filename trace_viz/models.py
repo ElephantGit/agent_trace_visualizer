@@ -75,6 +75,24 @@ class ResultInfo:
 
 
 @dataclass
+class WorkflowNode:
+    """A node in the agent workflow tree — represents a main agent or subagent."""
+
+    id: str                                             # session_id or generated unique id
+    name: str                                           # agent name (e.g. "general-purpose", "Explore")
+    description: str = ""                               # task description / prompt
+    state: str = "unknown"                              # completed | failed | running | unknown
+    parent_id: str | None = None                        # parent node id (None for root)
+    children: list["WorkflowNode"] = field(default_factory=list)
+    global_step: int = 0                                # dispatch step number
+    duration_ms: int | None = None                      # execution duration
+    tool_count: int = 0                                 # number of tool calls
+    input_tokens: int = 0                               # input tokens
+    output_tokens: int = 0                              # output tokens
+    is_root: bool = False                               # is this the main session agent?
+
+
+@dataclass
 class ParseResult:
     """Fully parsed session data returned by every parser."""
 

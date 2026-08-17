@@ -60,41 +60,43 @@ def render_mermaid(
         "window.__mmd_src=" + src_json + ";\n"
         "mermaid.initialize({startOnLoad:false,theme:'" + theme + "',"
         "sequence:{mirrorActors:false,messageAlign:'left'}});\n"
-        # Mermaid 10 leaves throwaway render artifacts in the body after each failed
-        # render() retry: orphan <svg> elements (with no id) and "dmmd-<id>"
-        # containers, each ~150px tall. They stack under #mermaid-out and inflate
-        # the body far past the real diagram. Only remove transients that are NOT
-        # inside #mermaid-out (the real diagram lives there and must survive).
+        # Clean up Mermaid transient artifacts from previous failed render attempts.
         "function __mmd_cleanup(){var b=document.body,out=document.getElementById('mermaid-out');"
         "Array.prototype.forEach.call(b.children,function(n){"
         "if(n===out)return;"
         "var tn=(n.tagName||'').toUpperCase();"
         "if(tn==='SVG'||/^dmmd/.test(n.id)||(n.className&&/dmermaid/.test(n.className))){n.remove();}});}\n"
-        # Mermaid 10 hard-codes actor lifeline y2=2000, so on a tall diagram (many
-        # notes/messages) the vertical lines stop ~halfway and the bottom half loses
-        # its column dividers. Extend every vertical lifeline (x1==x2) down to the
-        # full content height after the svg lands in the out container.
+        # Extend vertical lifelines to the full diagram height.
         "function __mmd_extend(){var svg=document.getElementById('mermaid-out').querySelector('svg');"
         "if(!svg)return;var vb=(svg.getAttribute('viewBox')||'').split(/\\s+/);var h=vb[3]?parseFloat(vb[3]):svg.getBoundingClientRect().height;"
         "Array.prototype.forEach.call(svg.querySelectorAll('line'),function(l){"
         "var x1=l.getAttribute('x1'),x2=l.getAttribute('x2');"
         "if(x1!=null&&x2!=null&&x1===x2){l.setAttribute('y2',h);}});}\n"
-        # The first mermaid.render() inside the iframe fires before the layout has
-        # settled, so Mermaid's temporary svg measures against a not-yet-rendered
-        # tree and throws "svg element not in render tree" (which Mermaid masks as
-        # the generic "Syntax error in text" error svg). Retry with a fresh diagram
-        # id until the layout settles (up to ~10s).
+        # Core render function with retry. Resets retry count on each invocation so
+        # that re-renders after tab switches get a fresh budget.
         "function __mmd_render(){var src=window.__mmd_src,out=document.getElementById('mermaid-out');"
+        "if(!out)return;"
         "__mmd_cleanup();"
         "var id='mmd-'+(window.__mmdTries||0);"
-        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();})"
+        "mermaid.render(id,src).then(function(r){__mmd_cleanup();out.innerHTML=r.svg;__mmd_extend();"
+        # Reset retries on success — next tab-switch re-render starts fresh.
+        "window.__mmdTries=0;window.__mmdRendered=true;})"
         ".catch(function(e){__mmd_cleanup();"
         "window.__mmdTries=(window.__mmdTries||0)+1;"
-        "if(window.__mmdTries<20){window.__mmdPending=setTimeout(__mmd_render,500);out.textContent='';}"
-        "else{out.textContent='Mermaid: '+(e&&e.message||e);}});}\n"
-        # The parser-blocking CDN above has loaded mermaid by here; wait for the
-        # iframe to finish laying out before the first attempt.
-        "window.addEventListener('load',function(){setTimeout(__mmd_render,300);});\n"
+        "if(window.__mmdTries<30){window.__mmdPending=setTimeout(__mmd_render,400);out.textContent='';}"
+        "else{out.textContent='Mermaid: '+(e&&e.message||e);window.__mmdTries=0;}});}\n"
+        # IntersectionObserver: only render when the iframe is visible in the viewport
+        # (i.e. the Streamlit tab containing it is active). This is the key fix for
+        # "svg element not in render tree" — hidden tabs have zero layout dimensions.
+        "window.__mmdRendered=false;"
+        "var __mmd_obs=new IntersectionObserver(function(entries){"
+        "if(entries[0].isIntersecting&&!window.__mmdRendered){"
+        "window.__mmdTries=0;__mmd_render();}"
+        # When the iframe leaves the viewport (tab switched away), reset so the next
+        # activation triggers a fresh render.
+        "if(!entries[0].isIntersecting){window.__mmdRendered=false;window.__mmdTries=0;}"
+        "},{threshold:0.1});"
+        "__mmd_obs.observe(document.documentElement);"
     )
     html = (
         "<!DOCTYPE html><html><head>"
@@ -228,27 +230,35 @@ def token_delta_fig(
 
 
 def tool_tiktoken_fig(df_tools: pd.DataFrame) -> go.Figure:
-    """Per-call bar chart coloured by tool name, Y = tiktoken tokens."""
-    tool_color = {
-        t: SAFE_PALETTE[i % len(SAFE_PALETTE)]
-        for i, t in enumerate(df_tools["name"].unique())
-    }
+    """Per-call bar chart coloured by tool name, Y = tiktoken tokens.
+
+    Uses a single Bar trace with per-bar colours so all bars share the same
+    width, regardless of how many calls each tool has.
+    """
+    colors = [
+        SAFE_PALETTE[i % len(SAFE_PALETTE)]
+        for i, _ in enumerate(df_tools["name"].unique())
+    ]
+    tool_color = dict(zip(df_tools["name"].unique(), colors))
+    bar_colors = df_tools["name"].map(tool_color)
+
     fig = go.Figure()
-    for tool_name, grp in df_tools.groupby("name"):
-        fig.add_trace(go.Bar(
-            x=grp.index, y=grp["tiktoken_tokens"],
-            name=tool_name, marker_color=tool_color[tool_name],
-            hovertemplate=f"工具: {tool_name}<br>Tiktoken: %{{y:,}}<extra></extra>",
-        ))
+    fig.add_trace(go.Bar(
+        x=df_tools.index, y=df_tools["tiktoken_tokens"],
+        marker_color=bar_colors,
+        hovertemplate=(
+            "工具: %{customdata}<br>Tiktoken: %{y:,}<extra></extra>"
+        ),
+        customdata=df_tools["name"],
+    ))
     mean_val = df_tools["tiktoken_tokens"].mean()
     fig.add_hline(
         y=mean_val, line_dash="dot", line_color="gray",
         annotation_text=f"均值 {mean_val:.0f}", annotation_position="top right",
     )
     fig.update_layout(
-        barmode="overlay", height=320, margin=dict(t=20, b=0),
+        height=320, margin=dict(t=20, b=0),
         xaxis_title="第 N 次调用", yaxis_title="Tiktoken Tokens",
-        legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
     )
     return fig
 
@@ -309,24 +319,29 @@ def tool_efficiency_table(df_tools: pd.DataFrame) -> None:
         if col in eff.columns:
             eff[col] = eff[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "—")
 
-    st.dataframe(eff, hide_index=True, use_container_width=True)
+    st.dataframe(eff, hide_index=True, width='stretch')
 
 
 def tool_inspector(df_tools: pd.DataFrame) -> None:
     """Selectbox + 2-column detail view for a single tool call."""
     if df_tools.empty:
         return
-    selected = st.selectbox(
+    # 只用索引做选项，避免 to_dict(orient="records") 把全部 output 文本序列化到前端
+    n = len(df_tools)
+    idx = st.selectbox(
         "选择一次工具调用进行深度审查：",
-        options=df_tools.to_dict(orient="records"),
-        format_func=lambda x: (
-            f"[Turn {x['turn_no']}] #{x['call_idx'] + 1}  {x['name']}  |  "
-            f"{'❌ 错误' if x['is_error'] else '✅'}  |  "
-            f"{x['tiktoken_tokens']:,} tokens"
+        options=range(n),
+        format_func=lambda i: (
+            f"[Turn {df_tools.iloc[i]['turn_no']}] "
+            f"#{int(df_tools.iloc[i]['call_idx']) + 1}  "
+            f"{df_tools.iloc[i]['name']}  |  "
+            f"{'❌ 错误' if df_tools.iloc[i]['is_error'] else '✅'}  |  "
+            f"{int(df_tools.iloc[i]['tiktoken_tokens']):,} tokens"
         ),
     )
-    if not selected:
+    if idx is None:
         return
+    selected = df_tools.iloc[idx].to_dict()
     c1, c2 = st.columns([1, 2])
     with c1:
         st.info(f"**Turn:** {selected['turn_no']}")
@@ -344,7 +359,7 @@ def tool_inspector(df_tools: pd.DataFrame) -> None:
                 st.code(json.dumps(raw_input, ensure_ascii=False, indent=2), language="json")
     with c2:
         st.subheader("工具返回内容")
-        st.text_area("", value=selected.get("output", ""), height=360, label_visibility="collapsed")
+        st.text_area("工具输出", value=selected.get("output", ""), height=360, label_visibility="collapsed")
 
 
 # ── Generic raw-data tab ───────────────────────────────────────
@@ -384,10 +399,11 @@ def raw_events_tab(
             st.json(evt)
 
     st.divider()
-    export = "\n".join(json.dumps(e, ensure_ascii=False) for e in filtered)
-    st.download_button(
-        "导出筛选结果 NDJSON",
-        export.encode("utf-8"),
-        f"{key_prefix}_filtered.ndjson",
-        "application/x-ndjson",
-    )
+    if st.button("📥 生成导出文件", key=f"{key_prefix}_export_btn"):
+        export = "\n".join(json.dumps(e, ensure_ascii=False) for e in filtered)
+        st.download_button(
+            "下载筛选结果 NDJSON",
+            export.encode("utf-8"),
+            f"{key_prefix}_filtered.ndjson",
+            "application/x-ndjson",
+        )

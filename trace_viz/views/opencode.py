@@ -15,6 +15,7 @@ from trace_viz.models import ParseResult
 from trace_viz.parsers.opencode import parse
 from trace_viz.utils import format_duration, mermaid_quote, sanitize_mermaid, to_str
 from trace_viz.views.replay import opencode_to_replay_steps, render_replay
+from trace_viz.views.workflow import build_workflow
 from trace_viz.views.shared import (
     mermaid_controls,
     render_mermaid,
@@ -51,13 +52,18 @@ def render_body(result: ParseResult) -> None:
         st.error("未解析到任何事件，请确认文件格式。")
         return
 
-    df_tools = _build_tools_df(result)
+    # ── 缓存衍生数据（避免每次交互重建所有 DataFrame）──────
+    cache_key = result.session_info.session_id or str(id(result))
+    if st.session_state.get("oc_cache_key") != cache_key:
+        st.session_state["oc_cache_key"] = cache_key
+        st.session_state["oc_df_tools"] = _build_tools_df(result)
+        st.session_state["oc_df_turns"] = (
+            pd.DataFrame([t.__dict__ for t in result.turns])
+            if result.turns else pd.DataFrame()
+        )
 
-    _sidebar_meta(result)
-    _metrics_row(result, df_tools)
-    st.markdown("---")
-
-    df_turns = pd.DataFrame([t.__dict__ for t in result.turns]) if result.turns else pd.DataFrame()
+    df_tools = st.session_state["oc_df_tools"]
+    df_turns = st.session_state["oc_df_turns"]
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         ["📜 会话回放", "总览", "Subagent", "Token 趋势", "工具执行与消耗", "原始数据"]
@@ -132,7 +138,8 @@ def _load_subagent_result(child_session_id: str) -> ParseResult | None:
 def _tab_replay(result: ParseResult) -> None:
     """以时间线形式回放整个 Opencode 会话的完整过程。"""
     steps = opencode_to_replay_steps(result.raw_events)
-    render_replay(steps, title="📜 Opencode 会话回放")
+    workflow_root = build_workflow(result)
+    render_replay(steps, title="📜 Opencode 会话回放", workflow_root=workflow_root)
 
 
 # ── Tab 1: Overview ────────────────────────────────────────────
@@ -149,7 +156,7 @@ def _tab_overview(result: ParseResult, df_tools: pd.DataFrame) -> None:
                      color="type", color_discrete_map=OC_COLORS, hole=0.4)
         fig.update_traces(textinfo="label+percent+value")
         fig.update_layout(showlegend=False, margin=dict(t=0, b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with col_r:
         st.subheader("工具调用分布")
@@ -160,7 +167,7 @@ def _tab_overview(result: ParseResult, df_tools: pd.DataFrame) -> None:
                           color="工具名称", color_discrete_sequence=SAFE_PALETTE)
             fig2.update_layout(yaxis=dict(autorange="reversed"),
                                margin=dict(t=0, b=0), showlegend=False)
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
         else:
             st.info("暂无工具调用")
 
@@ -188,10 +195,10 @@ def _tab_overview(result: ParseResult, df_tools: pd.DataFrame) -> None:
         fig_ts = px.scatter(df_ts, x="时间", y="Global Step")
         fig_ts.update_traces(marker=dict(size=10, color="#1a73e8"))
         fig_ts.update_layout(height=240, margin=dict(t=10, b=0))
-        st.plotly_chart(fig_ts, use_container_width=True)
+        st.plotly_chart(fig_ts, width='stretch')
         st.dataframe(
             df_ts.assign(时间=df_ts["时间"].dt.strftime("%H:%M:%S.%f").str[:-3]),
-            use_container_width=True, height=200,
+            width='stretch', height=200,
         )
 
 
@@ -243,7 +250,7 @@ def _tab_subagents(result: ParseResult) -> None:
         })
 
     df_ov = pd.DataFrame(overview_rows)
-    st.dataframe(df_ov, hide_index=True, use_container_width=True)
+    st.dataframe(df_ov, hide_index=True, width='stretch')
 
     available = [r for r in overview_rows if r["数据可用"] == "✅"]
     if available:
@@ -259,7 +266,7 @@ def _tab_subagents(result: ParseResult) -> None:
                                   name="Output", marker_color="#34a853"))
             fig.update_layout(barmode="group", height=320, margin=dict(t=10, b=0),
                                legend=dict(orientation="h", y=1.1, x=1, xanchor="right"))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col_b:
             st.subheader("各 Subagent 工具调用次数")
@@ -267,7 +274,7 @@ def _tab_subagents(result: ParseResult) -> None:
             fig2 = px.bar(df_tc, x="名称", y="工具调用次数", color="名称",
                           color_discrete_sequence=SAFE_PALETTE)
             fig2.update_layout(height=320, margin=dict(t=10, b=0), showlegend=False)
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
     st.divider()
     st.subheader("逐个 Subagent 详情")
@@ -299,7 +306,7 @@ def _tab_subagents(result: ParseResult) -> None:
             if not child_tools_df.empty:
                 tc = child_tools_df["name"].value_counts().reset_index()
                 tc.columns = ["工具名称", "次数"]
-                st.dataframe(tc, hide_index=True, use_container_width=True)
+                st.dataframe(tc, hide_index=True, width='stretch')
 
 
 # ── Tab 3: Token trends ────────────────────────────────────────
@@ -322,11 +329,11 @@ def _tab_tokens(df_turns: pd.DataFrame) -> None:
         cache_creation_col="cache_creation_cum",
         reasoning_col="reasoning_tokens",   # cumsum'd internally
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.divider()
     st.subheader("每轮 Token 增量（Step 差值）")
-    st.plotly_chart(token_delta_fig(df_turns), use_container_width=True)
+    st.plotly_chart(token_delta_fig(df_turns), width='stretch')
 
 
 # ── Tab 4: Tool execution & consumption ─────────────────────────
@@ -347,7 +354,7 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
                     color_discrete_sequence=SAFE_PALETTE)
         fa.update_traces(textposition="outside")
         fa.update_layout(height=320, margin=dict(t=10, b=0), showlegend=False)
-        st.plotly_chart(fa, use_container_width=True)
+        st.plotly_chart(fa, width='stretch')
 
     with col_b:
         st.subheader("各工具耗时（avg / max）")
@@ -362,13 +369,13 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
                 xaxis_title="工具名称", yaxis_title="ms",
                 legend=dict(orientation="h", y=1.1, x=1, xanchor="right"),
             )
-            st.plotly_chart(fb, use_container_width=True)
+            st.plotly_chart(fb, width='stretch')
         else:
             st.info("无耗时数据")
 
     st.divider()
     st.subheader("每次工具调用的 Tiktoken Token 数")
-    st.plotly_chart(tool_tiktoken_fig(df_tools), use_container_width=True)
+    st.plotly_chart(tool_tiktoken_fig(df_tools), width='stretch')
 
     st.divider()
     st.subheader("工具效率汇总")
@@ -385,7 +392,7 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
     st.plotly_chart(
         px.bar(agg, x="name", y="allotted_tokens", color="name", text_auto=True,
                labels={"name": "工具名称", "allotted_tokens": "分摊 Token 消耗"}),
-        use_container_width=True,
+        width='stretch',
     )
 
     st.divider()
@@ -401,7 +408,7 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
         st.plotly_chart(
             px.bar(mx, x="name", y="allotted_tokens", color="name", text_auto=True,
                    labels={"name": "工具名称", "allotted_tokens": "最大分摊 Token"}),
-            use_container_width=True,
+            width='stretch',
         )
 
     with col_d:
@@ -417,7 +424,7 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
             color_discrete_sequence=SAFE_PALETTE,
         )
         fig_sc.update_layout(height=300, margin=dict(t=10, b=0))
-        st.plotly_chart(fig_sc, use_container_width=True)
+        st.plotly_chart(fig_sc, width='stretch')
 
     st.divider()
     st.subheader("逐 Step Token 分摊明细")
@@ -429,7 +436,7 @@ def _tab_tools(df_tools: pd.DataFrame) -> None:
             总输出大小chars=("output_chars", "sum"),
         ).reset_index().rename(columns={"turn_no": "Global Step"})
     )
-    st.dataframe(step_agg, use_container_width=True)
+    st.dataframe(step_agg, width='stretch')
 
 
 # ── Tab 6: Raw data ────────────────────────────────────────────
@@ -464,7 +471,7 @@ def _tab_raw(
     available = [c for c in display_cols if c in df_f.columns]
     st.dataframe(
         df_f[available] if available else df_f,
-        use_container_width=True,
+        width='stretch',
         height=400,
     )
 
@@ -485,7 +492,7 @@ def _tab_raw(
 
     if not df_turns.empty:
         st.subheader("Step 明细")
-        st.dataframe(df_turns, use_container_width=True)
+        st.dataframe(df_turns, width='stretch')
 
     if not df_tools.empty:
         st.subheader("工具调用明细")
@@ -493,7 +500,7 @@ def _tab_raw(
                        "tiktoken_tokens", "allotted_tokens"]
         st.dataframe(
             df_tools[[c for c in detail_cols if c in df_tools.columns]],
-            use_container_width=True,
+            width='stretch',
         )
 
 
