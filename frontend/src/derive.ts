@@ -173,47 +173,34 @@ export function toolSuccessRate(tools: ToolCall[]): number {
   return Math.round((1 - errors / tools.length) * 1000) / 10
 }
 
-// ── Timeline (DevTools Network-style waterfall) ───────────────
+// ── Timeline：三种核心信息（用户输入 / 模型文本 / 工具调用+结果）──
+// 从原始 transcript jsonl 中只提取三类信息，其余事件（thinking、
+// permission-mode、queue-operation 等系统/元事件）不进入时间轴。
 
-export type TimelineKind = 'user' | 'llm' | 'tool' | 'system'
+export type TimelineKind = 'user' | 'llm' | 'tool'
 
 export interface TimelineEvent {
   ts_ms: number
   ts: string
+  /// user = 用户真实输入；llm = 模型输出的文本内容；tool = 工具调用+结果
   kind: TimelineKind
-  /// 回放引擎同款分类（11 类之一）：
-  /// system / llm_text / tool_call / tool_result / subagent / skill / mcp /
-  /// result / error / user_input / thinking
-  category: string
-  /// 轮次号：每条用户输入开启新轮次（开场前事件归 0）
+  /// 轮次号：每条用户真实输入开启新轮次（开场前事件归 0）
   turn_no: number
-  /// 轮次内层级：用户=0，LLM/思考=1，工具调用=2，工具结果=3（挂在发起它的
-  /// 工具之下），系统/元事件=1
+  /// 轮次内层级：用户=0，模型文本=1，工具调用=2
   depth: number
-  /// 名称列：文本摘要 / model / 工具名 / 事件描述
+  /// 名称列：文本摘要 / 工具名
   name: string
-  /// 状态列：✅/❌、stop_reason、插值标记等
+  /// 状态列：✅/❌、stop_reason 等
   status: string
   in_tokens: number
   out_tokens: number
   /// 瀑布条时长：工具=真实耗时；其余为 null（渲染最小宽标记点）
   duration_ms: number | null
-  /// 耗时列展示值（LLM 行显示延迟）
+  /// 耗时列展示值（模型文本行显示 LLM 延迟）
   display_duration_ms: number | null
   tool_name: string
   is_error: boolean
-  /// 无 timestamp 的元事件按文件顺序插值到相邻时间戳
-  interpolated: boolean
   detail: Record<string, unknown>
-}
-
-/// 回放引擎的 `_classify_tool` 移植（backend/src/derive/replay.rs）。
-export function classifyToolCategory(toolName: string): 'subagent' | 'skill' | 'mcp' | 'tool_call' {
-  if (toolName.startsWith('mcp__')) return 'mcp'
-  const lower = toolName.toLowerCase()
-  if (['task', 'delegate', 'subagent', 'agent'].includes(lower)) return 'subagent'
-  if (['skill', 'run_skill', 'use_skill'].includes(lower)) return 'skill'
-  return 'tool_call'
 }
 
 export interface TimelineModel {
@@ -238,7 +225,8 @@ function tsOf(evt: Record<string, unknown>): number | null {
   return Number.isNaN(ms) ? null : ms
 }
 
-function textPreview(content: unknown, n = 60): string {
+/// 提取 user 消息中的真实输入文本（tool_result 包装消息返回 ''）。
+function userInputText(content: unknown, n = 60): string {
   if (typeof content === 'string') return content.slice(0, n)
   if (Array.isArray(content)) {
     const parts: string[] = []
@@ -264,31 +252,31 @@ function bisectLeft(arr: number[], x: number): number {
   return lo
 }
 
-/// DevTools Network-style timeline rows: every session event becomes a list
-/// entry with a waterfall start time and (for tools) a real duration.
+/// 从原始 jsonl 提取三种核心信息并组织为时间轴事件列表：
+///   1. 用户真实输入（type=user 且 message.content 含文本）
+///   2. 模型文本输出（type=assistant 的 text 块）
+///   3. 工具调用+结果（tool_use ↔ tool_result 配对合并为一行）
 export function buildTimeline(rawEvents: unknown[]): TimelineModel {
-  // ── Pass 1: collect items + tool pairing maps ────────────────
-  interface Item {
-    evt: Record<string, unknown>
-    ts_ms: number | null
+  // ── Pass 1: 收集工具配对映射（tool_use id → 调用信息；结果 id → 结果）──
+  interface ToolUseRec {
+    ts_ms: number
+    name: string
+    input: unknown
   }
-  const items: Item[] = []
-  const toolUses = new Map<
-    string,
-    { ts_ms: number; name: string; input: unknown }
-  >()
-  const toolResults = new Map<
-    string,
-    { ts_ms: number; output: unknown; is_error: boolean }
-  >()
+  interface ToolResultRec {
+    ts_ms: number
+    output: unknown
+    is_error: boolean
+  }
+  const toolUses = new Map<string, ToolUseRec>()
+  const toolResults = new Map<string, ToolResultRec>()
 
   for (const raw of rawEvents) {
     const evt = raw as Record<string, unknown>
     const type = (evt.type as string) ?? ''
     const tsMs = tsOf(evt)
-    items.push({ evt, ts_ms: tsMs })
-
     const message = (evt.message ?? {}) as Record<string, unknown>
+
     if (type === 'assistant') {
       const blocks = Array.isArray(message.content) ? message.content : []
       for (const b of blocks) {
@@ -327,34 +315,12 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
     }
   }
 
-  // ── Pass 2: interpolate timestamps for meta events ──────────
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].ts_ms !== null) continue
-    let resolved: number | null = null
-    for (let j = i + 1; j < items.length; j++) {
-      if (items[j].ts_ms !== null) {
-        resolved = items[j].ts_ms
-        break
-      }
-    }
-    if (resolved === null) {
-      for (let k = i - 1; k >= 0; k--) {
-        if (items[k].ts_ms !== null) {
-          resolved = items[k].ts_ms
-          break
-        }
-      }
-    }
-    items[i].ts_ms = resolved
-  }
-
-  // ── Pass 3: build events in file order ──────────────────────
+  // ── Pass 2: 按文件顺序构建三类事件 ──────────────────────────
   const events: TimelineEvent[] = []
   const userTsList: number[] = []
   let minTs = Infinity
   let maxTs = -Infinity
   let currentTurn = 0
-  const turnToolIds = new Set<string>()
 
   const push = (e: Omit<TimelineEvent, 'in_tokens' | 'out_tokens'>) => {
     const ts = e.ts_ms
@@ -365,67 +331,68 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
     events.push({ ...e, in_tokens: 0, out_tokens: 0 })
   }
 
-  for (const item of items) {
-    const evt = item.evt
+  for (const raw of rawEvents) {
+    const evt = raw as Record<string, unknown>
     const type = (evt.type as string) ?? ''
-    const tsMs = item.ts_ms
+    const tsMs = tsOf(evt)
     if (tsMs === null) continue
     const ts = new Date(tsMs).toISOString()
     const message = (evt.message ?? {}) as Record<string, unknown>
     const usage = (message.usage ?? {}) as Record<string, number>
 
+    // ── 1. 用户真实输入 ──────────────────────────────────────
     if (type === 'user') {
-      const preview = textPreview(message.content)
+      const preview = userInputText(message.content)
+      if (!preview.trim()) continue // tool_result 包装消息不算用户输入
       const origin = (evt.origin ?? {}) as Record<string, unknown>
       userTsList.push(tsMs)
       currentTurn += 1
-      turnToolIds.clear()
       push({
         ts_ms: tsMs,
         ts,
         kind: 'user',
-        category: 'user_input',
         turn_no: currentTurn,
         depth: 0,
-        name: preview || '用户输入',
+        name: preview,
         status: [evt.promptSource, origin.kind].filter(Boolean).join(' / '),
         duration_ms: null,
         display_duration_ms: null,
         tool_name: '',
         is_error: false,
-        interpolated: false,
         detail: { evt, promptId: evt.promptId, content: message.content },
       })
       continue
     }
 
+    // ── 2+3. 模型文本输出 + 工具调用 ─────────────────────────
     if (type === 'assistant') {
       const blocks = Array.isArray(message.content) ? message.content : []
-      // 思考块 → 独立 thinking 行（与回放引擎一致）
+      // 模型文本输出：text 块拼接（非空才成行）
+      const textParts: string[] = []
       for (const b of blocks) {
-        if (b && typeof b === 'object' && (b as Record<string, unknown>).type === 'thinking') {
-          const th = b as Record<string, unknown>
-          const text = String(th.thinking ?? th.text ?? '')
-          if (text.trim()) {
-            push({
-              ts_ms: tsMs,
-              ts,
-              kind: 'llm',
-              category: 'thinking',
-              turn_no: currentTurn,
-              depth: 1,
-              name: '思考过程',
-              status: '',
-              duration_ms: null,
-              display_duration_ms: null,
-              tool_name: '',
-              is_error: false,
-              interpolated: false,
-              detail: { evt, thinking: text },
-            })
-          }
+        if (b && typeof b === 'object' && (b as Record<string, unknown>).type === 'text') {
+          const t = (b as Record<string, unknown>).text
+          if (typeof t === 'string' && t.trim()) textParts.push(t)
         }
       }
+      const fullText = textParts.join('\n')
+      if (fullText.trim()) {
+        push({
+          ts_ms: tsMs,
+          ts,
+          kind: 'llm',
+          turn_no: currentTurn,
+          depth: 1,
+          name: fullText.slice(0, 60).replace(/\n/g, ' '),
+          status: String(message.stop_reason ?? ''),
+          duration_ms: null,
+          display_duration_ms: null, // 延迟在 userTsList 齐后回填
+          tool_name: '',
+          is_error: false,
+          detail: { evt, model: message.model, stop_reason: message.stop_reason, usage, text: fullText },
+        })
+      }
+      // 工具调用：与结果配对合并为一行
       for (const b of blocks) {
         if (b && typeof b === 'object' && (b as Record<string, unknown>).type === 'tool_use') {
           const tu = b as Record<string, unknown>
@@ -433,22 +400,18 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
           const use = toolUses.get(id)
           const res = toolResults.get(id)
           const duration = use && res ? Math.max(0, res.ts_ms - use.ts_ms) : null
-          const toolName = String(tu.name ?? 'tool')
-          if (id) turnToolIds.add(id)
           push({
             ts_ms: tsMs,
             ts,
             kind: 'tool',
-            category: classifyToolCategory(toolName),
             turn_no: currentTurn,
             depth: 2,
-            name: toolName,
+            name: String(tu.name ?? 'tool'),
             status: !res ? '无结果' : res.is_error ? '❌' : '✅',
             duration_ms: duration,
             display_duration_ms: duration,
-            tool_name: toolName,
+            tool_name: String(tu.name ?? 'tool'),
             is_error: res?.is_error ?? false,
-            interpolated: false,
             detail: {
               evt,
               tool_id: id,
@@ -461,124 +424,34 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
           })
         }
       }
-      push({
-        ts_ms: tsMs,
-        ts,
-        kind: 'llm',
-        category: 'llm_text',
-        turn_no: currentTurn,
-        depth: 1,
-        name: String(message.model ?? 'assistant'),
-        status: String(message.stop_reason ?? ''),
-        duration_ms: null,
-        display_duration_ms: null, // latency filled after userTsList is complete
-        tool_name: '',
-        is_error: false,
-        interpolated: false,
-        detail: { evt, model: message.model, stop_reason: message.stop_reason, usage },
-      })
       continue
     }
 
-    // ── system / meta events ─────────────────────────────────
-    const subtype = (evt.subtype as string) ?? ''
-    let name = ''
-    let status = ''
-    let duration: number | null = null
-    let displayDuration: number | null = null
-    if (type === 'system' && subtype === 'local_command') {
-      const m = /<command-name>([^<]*)<\/command-name>/.exec(String(evt.content ?? ''))
-      name = m ? `命令 ${m[1]}` : '命令'
-    } else if (type === 'system' && subtype === 'turn_duration') {
-      name = '轮次完成'
-      status = `${Math.round(Number(evt.durationMs ?? 0) / 1000)}s · ${evt.messageCount ?? 0} 条消息`
-      duration = Number(evt.durationMs ?? 0)
-      displayDuration = duration
-    } else if (type === 'system' && subtype === 'away_summary') {
-      name = '离开总结'
-      status = textPreview(evt.content, 40)
-    } else if (type === 'system') {
-      name = subtype ? `系统 ${subtype}` : '系统'
-      status = textPreview(evt.content, 40)
-    } else if (type === 'queue-operation') {
-      const m = /<task-id>([^<]*)<\/task-id>/.exec(String(evt.content ?? ''))
-      name = `队列 ${evt.operation ?? ''}`
-      status = m ? m[1] : ''
-    } else if (type === 'permission-mode') {
-      name = '权限模式'
-      status = String(evt.permissionMode ?? '')
-    } else if (type === 'mode') {
-      name = '模式'
-      status = String(evt.mode ?? '')
-    } else if (type === 'agent-name') {
-      name = 'Agent'
-      status = String(evt.agentName ?? '')
-    } else if (type === 'ai-title') {
-      name = '会话标题'
-      status = String(evt.aiTitle ?? '')
-    } else if (type === 'last-prompt') {
-      name = '最后提示词'
-      status = textPreview(evt.lastPrompt, 40)
-    } else if (type === 'file-history-snapshot') {
-      name = '文件快照'
-    } else if (type === 'attachment') {
-      name = '附件更新'
-      const att = (evt.attachment ?? {}) as Record<string, unknown>
-      status = String(att.type ?? '')
-    } else {
-      // top-level tool_result (already used for pairing; show a marker row
-      // for the result itself so its arrival time is visible)
-      if (type === 'tool_result') {
-        name = '工具结果'
-        status = ''
-      } else {
-        continue
-      }
-    }
-    const interpolated = tsOf(evt) === null
-    const isToolResultRow = type === 'tool_result'
-    const isToolResultError =
-      isToolResultRow && Boolean(evt.is_error ?? evt.isError)
-    if (isToolResultRow) {
-      // 工具结果：挂在发起它的工具调用之下（同轮次内则缩进一级）
+    // 顶层 tool_result：已配对的不再单独成行；孤儿结果保留标记行兜底
+    if (type === 'tool_result') {
       const tid = String(evt.tool_use_id ?? evt.toolUseId ?? '')
+      if (tid && toolUses.has(tid)) continue
       push({
         ts_ms: tsMs,
         ts,
         kind: 'tool',
-        category: isToolResultError ? 'error' : 'tool_result',
         turn_no: currentTurn,
-        depth: tid && turnToolIds.has(tid) ? 3 : 2,
-        name,
-        status,
-        duration_ms: duration,
-        display_duration_ms: displayDuration,
-        tool_name: isToolResultRow ? name : '',
-        is_error: isToolResultError,
-        interpolated,
+        depth: 2,
+        name: '工具结果',
+        status: '',
+        duration_ms: null,
+        display_duration_ms: null,
+        tool_name: '工具结果',
+        is_error: Boolean(evt.is_error ?? evt.isError),
         detail: { evt },
       })
-    } else {
-      push({
-        ts_ms: tsMs,
-        ts,
-        kind: 'system',
-        category: 'system',
-        turn_no: currentTurn,
-        depth: 1,
-        name,
-        status,
-        duration_ms: duration,
-        display_duration_ms: displayDuration,
-        tool_name: '',
-        is_error: false,
-        interpolated,
-        detail: { evt },
-      })
+      continue
     }
+
+    // 其余事件类型（thinking / 系统 / 元事件）不进入时间轴
   }
 
-  // ── LLM latency (legacy bisect semantics) + tokens ──────────
+  // ── LLM 延迟回填（bisect：最近前一条真实用户输入）──────────
   userTsList.sort((a, b) => a - b)
   const latencies: number[] = []
   for (const e of events) {
@@ -593,10 +466,6 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
     e.in_tokens = Number(usage.input_tokens ?? 0)
     e.out_tokens = Number(usage.output_tokens ?? 0)
   }
-  // (tool rows keep token columns at 0 → the UI renders '—')
-
-  // stable sort by time (file order is preserved for ties)
-  events.sort((a, b) => a.ts_ms - b.ts_ms)
 
   const toolNames = [...new Set(events.filter((e) => e.kind === 'tool').map((e) => e.tool_name))]
   const toolCount = events.filter((e) => e.kind === 'tool').length

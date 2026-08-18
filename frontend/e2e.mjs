@@ -119,26 +119,28 @@ console.log('6. claude transcript OK')
 await page.click('text=时间轴')
 await page.waitForSelector('.wf-row', { timeout: 20000 })
 const wfRowCount = await page.locator('.wf-row').count()
-// fixture: 2 user + 3 llm + 3 tool rows = 8
-if (wfRowCount !== 8) throw new Error(`expected 8 timeline rows, got ${wfRowCount}`)
+// fixture: 1 用户真实输入 + 3 模型文本 + 2 工具(调用+结果已合并) = 6
+if (wfRowCount !== 6) throw new Error(`expected 6 timeline rows, got ${wfRowCount}`)
 // three lanes render with blocks
 const laneCount = await page.locator('.tl-lane').count()
 if (laneCount !== 3) throw new Error(`expected 3 lanes, got ${laneCount}`)
 const blockCount = await page.locator('.tl-block').count()
-if (blockCount < 8) throw new Error(`lane blocks missing (${blockCount})`)
+if (blockCount < 6) throw new Error(`lane blocks missing (${blockCount})`)
 const tickCount = await page.locator('.tl-tick').count()
 if (tickCount < 2) throw new Error(`ruler ticks missing (${tickCount})`)
-// meta toggle default-on
-const metaOn = await page.locator('.pill-active', { hasText: '元事件' }).count()
-if (metaOn !== 1) throw new Error('元事件 filter must default to on')
-// turn separators (2 user prompts) + hierarchy indentation
+// 只展示三种类型：无 system/thinking 行、无元事件开关、恰 3 个过滤 pill
+const kinds = await page.evaluate(() => [...new Set([...document.querySelectorAll('.wf-row')].map((r) => r.getAttribute('data-kind')))].sort().join(','))
+if (kinds !== 'llm,tool,user') throw new Error(`rows must be exactly user/llm/tool, got ${kinds}`)
+const metaPill = await page.locator('.pill', { hasText: '元事件' }).count()
+if (metaPill !== 0) throw new Error('元事件 pill must be gone')
+const pillCount = await page.locator('.wf-toolbar .pill').count()
+if (pillCount !== 3) throw new Error(`expected exactly 3 filter pills, got ${pillCount}`)
+// 只统计真实用户输入：tool_result 包装消息不显示 → 1 个轮次
 const turnSeps = await page.locator('.tl-turn-sep').count()
-if (turnSeps !== 2) throw new Error(`expected 2 turn separators, got ${turnSeps}`)
-const subagentRows = await page.locator('.wf-row[data-category="subagent"]').count()
-if (subagentRows !== 1) throw new Error(`expected 1 subagent row, got ${subagentRows}`)
-const depth3Rows = await page.locator('.wf-row[data-depth="3"]').count()
-if (depth3Rows < 1) throw new Error('tool_result should be indented under its tool call (depth 3)')
-console.log(`7. strip timeline OK (${wfRowCount} rows, ${laneCount} lanes, ${blockCount} blocks, ${turnSeps} turns, depth-3 rows: ${depth3Rows})`)
+if (turnSeps !== 1) throw new Error(`expected 1 turn separator, got ${turnSeps}`)
+const toolRows = await page.locator('.wf-row[data-kind="tool"]').count()
+if (toolRows !== 2) throw new Error(`expected 2 merged tool rows, got ${toolRows}`)
+console.log(`7. strip timeline OK (${wfRowCount} rows, ${laneCount} lanes, ${blockCount} blocks, ${turnSeps} turn, kinds=${kinds})`)
 await page.screenshot({ path: `${OUT}/7-claude-timeline.png`, fullPage: true })
 
 // brush-select a time range on the strip → list filters to events inside it
@@ -147,22 +149,22 @@ await page.mouse.move(stripBox.x + stripBox.width * 0.1, stripBox.y + stripBox.h
 await page.mouse.down()
 await page.mouse.move(stripBox.x + stripBox.width * 0.95, stripBox.y + stripBox.height / 2, { steps: 8 })
 await page.mouse.up()
-// range [12s, 114s] covers: user(60s) + tool Read(90s) + llm(90s) + 顶层 tool_result(95s) = 4 rows
-await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 4, null, { timeout: 10000 })
+// range [12s, 114s] covers: tool Read(90s) + llm(90s) = 2 rows
+// （60s 的 tool_result 包装消息与 95s 的顶层结果均已合并隐藏）
+await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 2, null, { timeout: 10000 })
 await page.waitForSelector('text=清除时间选择', { timeout: 10000 })
-console.log('7b. brush time-range filter OK (4 rows in range)')
+console.log('7b. brush time-range filter OK (2 rows in range)')
 
 // single click on the strip clears the brush
 await page.mouse.click(stripBox.x + stripBox.width * 0.5, stripBox.y + stripBox.height / 2)
-await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 8, null, { timeout: 10000 })
-console.log('7c. brush clear OK (back to 8 rows)')
+await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 6, null, { timeout: 10000 })
+console.log('7c. brush clear OK (back to 6 rows)')
 
-// replay-category filter pills (deselect 用户/LLM/结果 → 工具+Subagent 剩 2 行)
-await page.click('.pill:has-text("用户")')
-await page.click('.pill:has-text("LLM")')
-await page.click('.pill:has-text("结果")')
+// 三种类型过滤（关掉 用户输入/模型文本 → 仅剩 2 个工具行）
+await page.click('.pill:has-text("用户输入")')
+await page.click('.pill:has-text("模型文本")')
 await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 2, null, { timeout: 10000 })
-console.log('7f. category filter OK (tool+subagent: 2 rows)')
+console.log('7f. kind filter OK (tools only: 2 rows)')
 
 // click a row → right-side detail panel with 摘要/Payload/Result/Timing/JSON tabs
 await page.click('.wf-row >> nth=0')
@@ -173,7 +175,16 @@ await page.click('.wf-panel >> text=Payload')
 await page.waitForSelector('.wf-panel .debug-json', { timeout: 10000 })
 await page.click('.wf-panel >> text=Timing')
 await page.waitForSelector('.wf-panel >> text=开始时间', { timeout: 10000 })
-console.log('7d. right detail panel OK (Payload + Timing tabs)')
+// 恢复过滤 → 点击模型文本行 → Result 显示模型输出的文本内容
+await page.click('.wf-panel >> text=关闭')
+await page.click('.pill:has-text("用户输入")')
+await page.click('.pill:has-text("模型文本")')
+await page.waitForFunction(() => document.querySelectorAll('.wf-row[data-kind="llm"]').length === 3, null, { timeout: 10000 })
+await page.click('.wf-row[data-kind="llm"] >> nth=0')
+await page.waitForSelector('.wf-panel', { timeout: 10000 })
+await page.click('.wf-panel >> text=Result')
+await page.waitForSelector('.wf-panel >> text=look into', { timeout: 10000 })
+console.log('7d. right detail panel OK (Payload/Timing tabs + llm text Result)')
 await page.screenshot({ path: `${OUT}/7d-waterfall-drawer.png`, fullPage: true })
 
 // subagent tab: dispatch overview + per-call detail expanders

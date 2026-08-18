@@ -379,7 +379,13 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 const KIND_COLORS: Record<string, string> = {
   user: '#64748b',
   llm: '#1a73e8',
-  system: '#8b5cf6',
+  tool: '#34a853',
+}
+
+const KIND_LABELS: Record<string, string> = {
+  user: '用户输入',
+  llm: '模型文本',
+  tool: '工具',
 }
 
 const LANES: { key: string; label: string; kinds: string[] }[] = [
@@ -419,47 +425,12 @@ interface Brush {
   end_ms: number
 }
 
-/// 回放引擎分类样式（backend derive/replay.rs `category_styles()` 的同款常量，
-/// useReplay 返回后优先使用服务端数据）。
-const FALLBACK_CATEGORIES: Record<string, { label: string; icon: string; color: string }> = {
-  system: { label: '系统', icon: '⚙️', color: '#a78bfa' },
-  llm_text: { label: 'LLM', icon: '💬', color: '#60a5fa' },
-  tool_call: { label: '工具', icon: '🔨', color: '#fbbf24' },
-  tool_result: { label: '结果', icon: '📋', color: '#4ade80' },
-  subagent: { label: 'Subagent', icon: '🤖', color: '#f43f5e' },
-  skill: { label: 'Skill', icon: '⚡', color: '#f97316' },
-  mcp: { label: 'MCP', icon: '🔌', color: '#2dd4bf' },
-  result: { label: '完成', icon: '✅', color: '#22c55e' },
-  error: { label: '错误', icon: '❌', color: '#f87171' },
-  user_input: { label: '用户', icon: '👤', color: '#94a3b8' },
-  thinking: { label: '思考', icon: '🧠', color: '#a855f7' },
-}
-
-const CATEGORY_ORDER = ['user_input', 'llm_text', 'thinking', 'tool_call', 'tool_result', 'subagent', 'skill', 'mcp', 'system', 'error', 'result']
-
 function TimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
   const model = useMemo(() => buildTimeline(rawEvents), [rawEvents])
-  // 回放引擎同款分类样式（该查询与回放 tab 共享缓存，零额外开销）
-  const replay = useReplay('claude_code', rawEvents)
-  const [cats, setCats] = useState<Set<string> | null>(null)
-  const [showMeta, setShowMeta] = useState(true)
+  const [kinds, setKinds] = useState<Set<string>>(new Set(['user', 'llm', 'tool']))
   const [keyword, setKeyword] = useState('')
   const [brush, setBrush] = useState<Brush | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
-
-  const categoryMeta = useMemo(() => {
-    const m = new Map<string, { label: string; icon: string; color: string }>()
-    for (const [key, style] of replay.data?.categories ?? []) {
-      m.set(key, { label: style.label, icon: style.icon, color: style.border })
-    }
-    return m
-  }, [replay.data])
-
-  const presentCategories = useMemo(
-    () => CATEGORY_ORDER.filter((c) => model.events.some((e) => e.category === c)),
-    [model],
-  )
-  const activeCats = cats ?? new Set(presentCategories)
 
   const toolColors = useMemo(() => {
     const m = new Map<string, string>()
@@ -471,32 +442,28 @@ function TimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
     () =>
       model.events.filter(
         (e) =>
-          activeCats.has(e.category) &&
-          (showMeta || !e.interpolated) &&
+          kinds.has(e.kind) &&
           (!brush || (e.ts_ms >= brush.start_ms && e.ts_ms <= brush.end_ms)) &&
           (!keyword ||
             e.name.toLowerCase().includes(keyword.toLowerCase()) ||
             e.tool_name.toLowerCase().includes(keyword.toLowerCase())),
       ),
-    [model, activeCats, showMeta, brush, keyword],
+    [model, kinds, brush, keyword],
   )
 
   const selectedEvent = selected !== null ? filtered[selected] : undefined
   const MAX_ROWS = 3000
   const shown = filtered.slice(0, MAX_ROWS)
 
-  const toggleCat = (c: string) => {
-    setCats((prev) => {
-      const next = new Set(prev ?? presentCategories)
-      if (next.has(c)) next.delete(c)
-      else next.add(c)
+  const toggleKind = (k: string) => {
+    setKinds((prev) => {
+      const next = new Set(prev)
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
       return next
     })
     setSelected(null)
   }
-
-  const catMeta = (c: string) =>
-    categoryMeta.get(c) ?? FALLBACK_CATEGORIES[c] ?? FALLBACK_CATEGORIES.system
 
   const barColor = (e: (typeof model.events)[number]) => {
     if (e.kind === 'tool') return toolColors.get(e.tool_name) ?? '#34a853'
@@ -534,17 +501,11 @@ function TimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
       {/* 过滤工具条（回放引擎同款分类） */}
       <div className="wf-toolbar">
         <div className="pills" style={{ margin: 0 }}>
-          {presentCategories.map((c) => {
-            const m = catMeta(c)
-            return (
-              <button key={c} className={`pill ${activeCats.has(c) ? 'pill-active' : ''}`} onClick={() => toggleCat(c)}>
-                {m.icon} {m.label}
-              </button>
-            )
-          })}
-          <button className={`pill ${showMeta ? 'pill-active' : ''}`} onClick={() => setShowMeta(!showMeta)}>
-            元事件
-          </button>
+          {(['user', 'llm', 'tool'] as const).map((k) => (
+            <button key={k} className={`pill ${kinds.has(k) ? 'pill-active' : ''}`} onClick={() => toggleKind(k)}>
+              {KIND_LABELS[k]}
+            </button>
+          ))}
         </div>
         <input
           type="text"
@@ -595,7 +556,6 @@ function TimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
                   // 轮次分割带（每条用户输入开启新轮次）
                   const prev = i > 0 ? shown[i - 1] : null
                   const isTurnStart = !prev || prev.turn_no !== e.turn_no
-                  const m = catMeta(e.category)
                   return (
                     <Fragment key={i}>
                       {isTurnStart && (
@@ -610,22 +570,19 @@ function TimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
                         </tr>
                       )}
                       <tr
-                        className={`wf-row ${selected === i ? 'wf-row-selected' : ''} ${e.category === 'user_input' ? 'wf-row-turn' : ''}`}
-                        data-category={e.category}
+                        className={`wf-row ${selected === i ? 'wf-row-selected' : ''} ${e.kind === 'user' ? 'wf-row-turn' : ''}`}
+                        data-kind={e.kind}
                         data-depth={e.depth}
                         onClick={() => selectByIdx(i)}
                       >
                         <td className="wf-name" title={e.name} style={{ paddingLeft: 8 + e.depth * 18 }}>
-                          <span className="wf-dot" style={{ background: m.color }} />
+                          <span className="wf-dot" style={{ background: barColor(e) }} />
                           <span className="wf-name-text">{e.name}</span>
                         </td>
-                        <td className={`wf-kind wf-kind-${e.kind}`} style={{ color: m.color }}>
-                          {m.icon} {m.label}
-                        </td>
+                        <td className={`wf-kind wf-kind-${e.kind}`}>{KIND_LABELS[e.kind]}</td>
                         <td className="wf-status" title={e.status}>
                           {e.is_error ? '❌ ' : ''}
                           {e.status}
-                          {e.interpolated ? ' （插值）' : ''}
                         </td>
                         <td className="wf-dur">{durStr(e)}</td>
                         <td className="wf-time">{formatClock(e.ts_ms)}</td>
@@ -646,8 +603,9 @@ function TimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
 
         {selectedEvent && (
           <TimelineDetail
+            key={selected}
             event={selectedEvent}
-            label={catMeta(selectedEvent.category).label}
+            label={KIND_LABELS[selectedEvent.kind]}
             color={barColor(selectedEvent)}
             prevTsMs={selected !== null && selected > 0 ? filtered[selected - 1].ts_ms : null}
             onClose={() => setSelected(null)}
@@ -797,16 +755,7 @@ function TimelineDetail({
 
   const result = (() => {
     if (event.detail.output !== undefined) return event.detail.output
-    if (event.kind === 'llm') {
-      const evt = event.detail.evt as Record<string, unknown>
-      const message = (evt.message ?? {}) as Record<string, unknown>
-      const blocks = Array.isArray(message.content) ? message.content : []
-      const text = blocks
-        .filter((b) => b && typeof b === 'object' && (b as Record<string, unknown>).type === 'text')
-        .map((b) => String((b as Record<string, unknown>).text ?? ''))
-        .join('\n')
-      return text || null
-    }
+    if (event.kind === 'llm' && typeof event.detail.text === 'string') return event.detail.text
     return null
   })()
 
@@ -815,7 +764,6 @@ function TimelineDetail({
     ['真实耗时', event.duration_ms !== null ? formatDuration(event.duration_ms) : '—'],
     ['LLM 延迟', event.kind === 'llm' && event.display_duration_ms !== null ? formatDuration(event.display_duration_ms) : '—'],
     ['与上一事件间隔', prevTsMs !== null ? formatDuration(Math.max(0, event.ts_ms - prevTsMs)) : '—'],
-    ['时间戳来源', event.interpolated ? '插值（原始事件无 timestamp）' : '原始 timestamp'],
   ]
 
   return (
@@ -846,7 +794,7 @@ function TimelineDetail({
               { '名称': event.name, '类型': label },
               { '状态': (event.is_error ? '❌ ' : '') + (event.status || '—'), 'Token in': event.in_tokens > 0 ? grouped(event.in_tokens) : '—' },
               { 'Token out': event.out_tokens > 0 ? grouped(event.out_tokens) : '—', '耗时': event.display_duration_ms !== null ? formatDuration(event.display_duration_ms) : '—' },
-              { '开始时间': event.ts, '插值': event.interpolated ? '是' : '否' },
+              { '开始时间': event.ts },
             ]}
           />
         )}
