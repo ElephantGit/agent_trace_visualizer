@@ -166,13 +166,16 @@ await page.click('.pill:has-text("模型文本")')
 await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 2, null, { timeout: 10000 })
 console.log('7f. kind filter OK (tools only: 2 rows)')
 
-// click a row → right-side detail panel with 摘要/Payload/Result/Timing/JSON tabs
+// click a tool row → panel: Payload(入参 JSON) + Result(归一化的输出全文)
 await page.click('.wf-row >> nth=0')
 await page.waitForSelector('.wf-panel', { timeout: 10000 })
 await page.waitForSelector('.wf-panel >> text=摘要', { timeout: 10000 })
 await page.waitForSelector('.wf-panel >> text=Payload', { timeout: 10000 })
 await page.click('.wf-panel >> text=Payload')
 await page.waitForSelector('.wf-panel .debug-json', { timeout: 10000 })
+// 工具输出原为 [{type:text,text:...}] 块数组 → 归一化为纯文本
+await page.click('.wf-panel >> text=Result')
+await page.waitForSelector('.wf-panel >> text=found 2 suspects', { timeout: 10000 })
 await page.click('.wf-panel >> text=Timing')
 await page.waitForSelector('.wf-panel >> text=开始时间', { timeout: 10000 })
 // 恢复过滤 → 点击模型文本行 → Result 显示模型输出的文本内容
@@ -184,7 +187,18 @@ await page.click('.wf-row[data-kind="llm"] >> nth=0')
 await page.waitForSelector('.wf-panel', { timeout: 10000 })
 await page.click('.wf-panel >> text=Result')
 await page.waitForSelector('.wf-panel >> text=look into', { timeout: 10000 })
-console.log('7d. right detail panel OK (Payload/Timing tabs + llm text Result)')
+// 用户输入行：摘要直接展示输入文本全文
+await page.click('.wf-panel >> text=关闭')
+await page.click('.wf-row[data-kind="user"] >> nth=0')
+await page.waitForSelector('.wf-panel >> text=输入内容', { timeout: 10000 })
+await page.waitForSelector('.wf-panel >> text=fix the bug in parser', { timeout: 10000 })
+// 回归：切到 Result 再点回 摘要，内容必须仍在（中文标签 tab key 修复）
+await page.click('.wf-panel >> text=Result')
+await page.waitForSelector('.wf-panel >> text=用户输入事件没有输出内容', { timeout: 10000 })
+await page.click('.wf-panel >> text=摘要')
+await page.waitForSelector('.wf-panel >> text=输入内容', { timeout: 10000 })
+await page.waitForSelector('.wf-panel >> text=fix the bug in parser', { timeout: 10000 })
+console.log('7d. per-type panel OK (tool Result 归一化 + llm text + user 输入全文 + 摘要 tab 回归)')
 await page.screenshot({ path: `${OUT}/7d-waterfall-drawer.png`, fullPage: true })
 
 // subagent tab: dispatch overview + per-call detail expanders

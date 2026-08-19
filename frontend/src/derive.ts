@@ -241,6 +241,46 @@ function userInputText(content: unknown, n = 60): string {
   return ''
 }
 
+/// 工具结果内容归一化为纯文本：string 原文；数组提取 text 块拼接；
+/// 对象 JSON 化；null/undefined → null（无输出）。
+export function joinToolOutput(output: unknown): string | null {
+  if (output === null || output === undefined) return null
+  if (typeof output === 'string') return output
+  if (Array.isArray(output)) {
+    const parts: string[] = []
+    for (const b of output) {
+      if (b && typeof b === 'object' && (b as Record<string, unknown>).type === 'text') {
+        const t = (b as Record<string, unknown>).text
+        if (typeof t === 'string') parts.push(t)
+      } else if (typeof b === 'string') {
+        parts.push(b)
+      }
+    }
+    return parts.join('\n')
+  }
+  try {
+    return JSON.stringify(output)
+  } catch {
+    return String(output)
+  }
+}
+
+/// 提取用户输入全文（不做截断；预览截断由调用方处理）。
+function userFullText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    const parts: string[] = []
+    for (const b of content) {
+      if (b && typeof b === 'object' && (b as Record<string, unknown>).type === 'text') {
+        const t = (b as Record<string, unknown>).text
+        if (typeof t === 'string') parts.push(t)
+      }
+    }
+    return parts.join('\n')
+  }
+  return ''
+}
+
 function bisectLeft(arr: number[], x: number): number {
   let lo = 0
   let hi = arr.length
@@ -359,7 +399,7 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
         display_duration_ms: null,
         tool_name: '',
         is_error: false,
-        detail: { evt, promptId: evt.promptId, content: message.content },
+        detail: { evt, promptId: evt.promptId, text: userFullText(message.content), content: message.content },
       })
       continue
     }
@@ -416,7 +456,7 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
               evt,
               tool_id: id,
               input: tu.input,
-              output: res?.output,
+              output: res ? joinToolOutput(res.output) : undefined,
               is_error: res?.is_error ?? false,
               start: use?.ts_ms,
               end: res?.ts_ms,

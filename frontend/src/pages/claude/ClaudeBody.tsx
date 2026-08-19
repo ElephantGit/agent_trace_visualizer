@@ -744,20 +744,35 @@ function TimelineDetail({
 }) {
   const [tab, setTab] = useState('summary')
 
-  const payload = (() => {
-    if (event.detail.input !== undefined) return event.detail.input
-    if (event.kind === 'user' && event.detail.content !== undefined) return event.detail.content
-    if (event.kind === 'llm') {
-      return { model: event.detail.model, stop_reason: event.detail.stop_reason, usage: event.detail.usage }
-    }
-    return null
-  })()
+  // ── 按事件类型归一化的内容（三种类型各有明确语义）──────────
+  // 用户输入：主内容 = 输入文本全文（detail.text）
+  const userText = event.kind === 'user' && typeof event.detail.text === 'string' ? event.detail.text : null
+  // 模型文本：主内容 = 输出文本全文（detail.text）
+  const llmText = event.kind === 'llm' && typeof event.detail.text === 'string' ? event.detail.text : null
+  // 工具：主内容 = 执行结果（detail.output 已归一化为字符串；
+  //       undefined = 无对应结果（孤儿），'' = 空输出）
+  const toolHasResult = event.kind === 'tool' && typeof event.detail.output === 'string'
+  const toolOutput = toolHasResult ? (event.detail.output as string) : null
 
-  const result = (() => {
-    if (event.detail.output !== undefined) return event.detail.output
-    if (event.kind === 'llm' && typeof event.detail.text === 'string') return event.detail.text
-    return null
-  })()
+  const usage = (event.detail.usage ?? {}) as Record<string, number>
+  const usageRows = [
+    ['模型', String(event.detail.model ?? '—')],
+    ['停止原因', String(event.detail.stop_reason ?? '—')],
+    ['Input Tokens', usage.input_tokens !== undefined ? grouped(Number(usage.input_tokens)) : '—'],
+    ['Output Tokens', usage.output_tokens !== undefined ? grouped(Number(usage.output_tokens)) : '—'],
+    ['Cache Read', usage.cache_read_input_tokens !== undefined ? grouped(Number(usage.cache_read_input_tokens)) : '—'],
+    ['Cache Creation', usage.cache_creation_input_tokens !== undefined ? grouped(Number(usage.cache_creation_input_tokens)) : '—'],
+    ['LLM 延迟', event.display_duration_ms !== null ? formatDuration(event.display_duration_ms) : '—'],
+  ]
+
+  const toolMetaRows = [
+    ['工具', event.tool_name || event.name],
+    ['状态', event.status || '—'],
+    ['真实耗时', event.duration_ms !== null ? formatDuration(event.duration_ms) : '—'],
+    ['开始', event.detail.start !== undefined ? new Date(Number(event.detail.start)).toISOString() : event.ts],
+    ['结束', event.detail.end !== undefined ? new Date(Number(event.detail.end)).toISOString() : '—'],
+    ['Tool ID', String(event.detail.tool_id ?? '—')],
+  ]
 
   const timingRows = [
     ['开始时间', event.ts],
@@ -765,6 +780,8 @@ function TimelineDetail({
     ['LLM 延迟', event.kind === 'llm' && event.display_duration_ms !== null ? formatDuration(event.display_duration_ms) : '—'],
     ['与上一事件间隔', prevTsMs !== null ? formatDuration(Math.max(0, event.ts_ms - prevTsMs)) : '—'],
   ]
+
+  const truncate = (t: string, n = 8000) => (t.length > n ? `${t.slice(0, n)}\n…（已截断，完整内容见 JSON 标签页）` : t)
 
   return (
     <div className="wf-panel">
@@ -778,33 +795,92 @@ function TimelineDetail({
         </button>
       </div>
       <div className="tabs" style={{ margin: '6px 10px' }}>
-        {['摘要', 'Payload', 'Result', 'Timing', 'JSON'].map((t) => {
-          const key = t.toLowerCase()
-          return (
-            <button key={key} className={`tab ${tab === key ? 'tab-active' : ''}`} onClick={() => setTab(key)}>
-              {t}
-            </button>
-          )
-        })}
+        {[
+          { key: 'summary', label: '摘要' },
+          { key: 'payload', label: 'Payload' },
+          { key: 'result', label: 'Result' },
+          { key: 'timing', label: 'Timing' },
+          { key: 'json', label: 'JSON' },
+        ].map((t) => (
+          <button key={t.key} className={`tab ${tab === t.key ? 'tab-active' : ''}`} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
       </div>
       <div className="wf-panel-body">
+        {/* ── 摘要：元信息行 + 按类型的主内容 ─────────────────── */}
         {tab === 'summary' && (
-          <DataTable
-            rows={[
-              { '名称': event.name, '类型': label },
-              { '状态': (event.is_error ? '❌ ' : '') + (event.status || '—'), 'Token in': event.in_tokens > 0 ? grouped(event.in_tokens) : '—' },
-              { 'Token out': event.out_tokens > 0 ? grouped(event.out_tokens) : '—', '耗时': event.display_duration_ms !== null ? formatDuration(event.display_duration_ms) : '—' },
-              { '开始时间': event.ts },
-            ]}
-          />
+          <div>
+            <div className="wf-drawer-meta">
+              <span>{label}</span>
+              <span>{event.ts}</span>
+              {event.display_duration_ms !== null && <span>耗时 {formatDuration(event.display_duration_ms)}</span>}
+              {event.status && <span>状态：{event.is_error ? '❌ ' : ''}{event.status}</span>}
+            </div>
+            {event.kind === 'user' && (
+              <>
+                <h4>输入内容</h4>
+                <pre className="debug-json">{truncate(userText ?? '') || '（空输入）'}</pre>
+              </>
+            )}
+            {event.kind === 'llm' && (
+              <>
+                <h4>输出内容</h4>
+                <pre className="debug-json">{truncate(llmText ?? '') || '（无文本输出）'}</pre>
+                <DataTable rows={usageRows.map(([k, v]) => ({ '项目': k, '值': v }))} compact />
+              </>
+            )}
+            {event.kind === 'tool' && (
+              <>
+                <DataTable rows={toolMetaRows.map(([k, v]) => ({ '项目': k, '值': v }))} compact />
+                <h4>输入参数</h4>
+                {event.detail.input !== undefined ? (
+                  <DebugJson value={event.detail.input} />
+                ) : (
+                  <p className="muted">（无入参）</p>
+                )}
+                <h4>输出摘要</h4>
+                {toolHasResult ? (
+                  <pre className="debug-json">{truncate(toolOutput ?? '', 2000) || '（空输出）'}</pre>
+                ) : (
+                  <p className="muted">该工具调用没有对应的执行结果。</p>
+                )}
+              </>
+            )}
+          </div>
         )}
-        {tab === 'payload' && (payload !== null ? <DebugJson value={payload} /> : <p className="muted">该事件无请求负载。</p>)}
-        {tab === 'result' &&
-          (typeof result === 'string' && result.length > 0 ? (
-            <pre className="debug-json">{result.slice(0, 8000)}</pre>
-          ) : (
-            <p className="muted">该事件无输出内容。</p>
-          ))}
+
+        {/* ── Payload：请求负载（按类型）─────────────────────── */}
+        {tab === 'payload' && (
+          <div>
+            {event.kind === 'user' && (userText ? <pre className="debug-json">{truncate(userText)}</pre> : <p className="muted">（空输入）</p>)}
+            {event.kind === 'llm' && <DebugJson value={{ model: event.detail.model, stop_reason: event.detail.stop_reason, usage }} />}
+            {event.kind === 'tool' &&
+              (event.detail.input !== undefined ? (
+                <DebugJson value={event.detail.input} />
+              ) : (
+                <p className="muted">（无入参）</p>
+              ))}
+          </div>
+        )}
+
+        {/* ── Result：输出结果（按类型）──────────────────────── */}
+        {tab === 'result' && (
+          <div>
+            {event.kind === 'user' && <p className="muted">用户输入事件没有输出内容（输入全文见 Payload 标签页）。</p>}
+            {event.kind === 'llm' &&
+              (llmText ? <pre className="debug-json">{truncate(llmText)}</pre> : <p className="muted">该模型消息没有文本输出（仅发起了工具调用）。</p>)}
+            {event.kind === 'tool' &&
+              (!toolHasResult ? (
+                <p className="muted">该工具调用没有对应的执行结果。</p>
+              ) : toolOutput ? (
+                <pre className="debug-json">{truncate(toolOutput)}</pre>
+              ) : (
+                <p className="muted">（空输出）</p>
+              ))}
+          </div>
+        )}
+
         {tab === 'timing' && <DataTable rows={timingRows.map(([k, v]) => ({ '项目': k, '值': v }))} />}
         {tab === 'json' && <DebugJson value={event.detail.evt} />}
       </div>
