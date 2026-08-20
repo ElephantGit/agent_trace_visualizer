@@ -13,13 +13,15 @@ import RawEventsTab from '../../components/RawEventsTab'
 import ToolInspector from '../../components/ToolInspector'
 import ToolEfficiencyTable from '../../components/ToolEfficiencyTable'
 import { Tabs, DataTable, Expander, Info } from '../../components/ui/primitives'
-import { fmtTok, formatDuration, shapeTurns, shapeTools, grouped, toolSuccessRate } from '../../derive'
+import TimelineView from '../../components/TimelineView'
+import { fmtTok, formatDuration, shapeTurns, shapeTools, grouped, toolSuccessRate, buildTimelineOpencode } from '../../derive'
 
 const TABS = [
   { key: 'replay', label: '📜 会话回放' },
   { key: 'overview', label: '总览' },
   { key: 'subagent', label: 'Subagent' },
   { key: 'tokens', label: 'Token 趋势' },
+  { key: 'timeline', label: '时间轴' },
   { key: 'tools', label: '工具执行与消耗' },
   { key: 'raw', label: '原始数据' },
 ]
@@ -79,6 +81,8 @@ export default function OpencodeBody({
       {tab === 'subagent' && <SubagentTab result={result} />}
 
       {tab === 'tokens' && <TokensTab turns={turns} />}
+
+      {tab === 'timeline' && <OpencodeTimelineTab rawEvents={result.raw_events} />}
 
       {tab === 'tools' && <ToolsTab result={result} />}
 
@@ -351,6 +355,13 @@ function SubagentDetail({ view }: { view: SubagentView }) {
       )}
     </Expander>
   )
+}
+
+// ── Timeline tab：与 Claude Code 同款三泳道时间轴 ─────────────
+
+function OpencodeTimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
+  const model = useMemo(() => buildTimelineOpencode(rawEvents), [rawEvents])
+  return <TimelineView model={model} />
 }
 
 // ── Token trend tab ───────────────────────────────────────────

@@ -530,6 +530,180 @@ export function buildTimeline(rawEvents: unknown[]): TimelineModel {
   }
 }
 
+
+/// Opencode 时间轴提取（trace_logger.ts 生成的 ndjson）：
+/// 与 claude 同款三泳道模型——用户输入（text.user，插件当前版本不产生）、
+/// 模型文本输出（text.assistant）、工具调用+结果（tool.start↔tool.finish）。
+/// 轮次锚点 = globalStep（step.start 开启新轮次）；token 数据取自同 step 的
+/// step.finish。
+export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
+  // ── Pass 1: 工具配对 + step token 索引 ──────────────────────
+  interface OcToolUse {
+    ts_ms: number
+    name: string
+    input: unknown
+  }
+  const toolStarts = new Map<string, OcToolUse>()
+  const stepUsage = new Map<number, Record<string, number>>()
+  const stepReason = new Map<number, string>()
+
+  for (const raw of rawEvents) {
+    const evt = raw as Record<string, unknown>
+    const type = (evt.type as string) ?? ''
+    const tsMs = typeof evt.ts === 'number' ? evt.ts : null
+    if (type === 'tool.start') {
+      const id = String(evt.toolCallId ?? '')
+      if (id && tsMs !== null) {
+        toolStarts.set(id, {
+          ts_ms: tsMs,
+          name: String(evt.tool ?? 'tool'),
+          input: evt.args,
+        })
+      }
+    } else if (type === 'step.finish') {
+      const gs = Number(evt.globalStep ?? -1)
+      const tokens = (evt.tokens ?? {}) as Record<string, number>
+      if (gs >= 0) {
+        stepUsage.set(gs, {
+          input_tokens: Number(tokens.input ?? 0),
+          output_tokens: Number(tokens.output ?? 0),
+          cache_read_input_tokens: Number(tokens.cacheRead ?? 0),
+          cache_creation_input_tokens: Number(tokens.cacheWrite ?? 0),
+        })
+        stepReason.set(gs, String(evt.reason ?? ''))
+      }
+    }
+  }
+
+  // ── Pass 2: 构建三类事件 ────────────────────────────────────
+  const events: TimelineEvent[] = []
+  let minTs = Infinity
+  let maxTs = -Infinity
+  let currentStep = 0
+  let model = ''
+  for (const raw of rawEvents) {
+    const evt = raw as Record<string, unknown>
+    const type = (evt.type as string) ?? ''
+    const tsMs = typeof evt.ts === 'number' ? evt.ts : null
+    if (tsMs === null) continue
+    if (tsMs < minTs) minTs = tsMs
+    if (tsMs > maxTs) maxTs = tsMs
+    const ts = new Date(tsMs).toISOString()
+
+    const push = (e: Omit<TimelineEvent, 'in_tokens' | 'out_tokens'>) =>
+      events.push({ ...e, in_tokens: 0, out_tokens: 0 })
+
+    if (type === 'step.start') {
+      currentStep = Number(evt.globalStep ?? currentStep + 1)
+      continue
+    }
+    // 会话模型名（session.updated / session.start 首个非空）
+    if (type === 'session.updated' || type === 'session.start') {
+      const m = String(evt.model ?? '')
+      if (!model && m) model = m
+      continue
+    }
+    // 1. 用户输入（插件当前版本不产生 text.user，兼容性保留）
+    if (type === 'text.user') {
+      const text = String(evt.text ?? '').trim()
+      if (!text) continue
+      push({
+        ts_ms: tsMs,
+        ts,
+        kind: 'user',
+        turn_no: currentStep,
+        depth: 0,
+        name: text.slice(0, 60),
+        status: '',
+        duration_ms: null,
+        display_duration_ms: null,
+        tool_name: '',
+        is_error: false,
+        detail: { evt, text },
+      })
+      continue
+    }
+    // 2. 模型文本输出
+    if (type === 'text.assistant') {
+      const text = String(evt.text ?? '').trim()
+      if (!text) continue
+      const gs = Number(evt.globalStep ?? currentStep)
+      push({
+        ts_ms: tsMs,
+        ts,
+        kind: 'llm',
+        turn_no: gs,
+        depth: 1,
+        name: text.slice(0, 60).replace(/\n/g, ' '),
+        status: stepReason.get(gs) ?? '',
+        duration_ms: null,
+        display_duration_ms: null,
+        tool_name: '',
+        is_error: false,
+        detail: {
+          evt,
+          text,
+          model: model || undefined,
+          stop_reason: stepReason.get(gs),
+          usage: stepUsage.get(gs) ?? {},
+        },
+      })
+      continue
+    }
+    // 3. 工具调用+结果（合并一行）
+    if (type === 'tool.finish') {
+      const id = String(evt.toolCallId ?? '')
+      const start = toolStarts.get(id)
+      const startTs = start?.ts_ms ?? tsMs
+      const rawDur = evt.duration
+      const duration =
+        typeof rawDur === 'number' && rawDur > 0
+          ? rawDur
+          : Math.max(0, tsMs - startTs)
+      push({
+        ts_ms: startTs,
+        ts: new Date(startTs).toISOString(),
+        kind: 'tool',
+        turn_no: Number(evt.globalStep ?? currentStep),
+        depth: 2,
+        name: String(evt.tool ?? start?.name ?? 'tool'),
+        status: evt.isError ? '❌' : '✅',
+        duration_ms: duration,
+        display_duration_ms: duration,
+        tool_name: String(evt.tool ?? start?.name ?? 'tool'),
+        is_error: Boolean(evt.isError),
+        detail: {
+          evt,
+          tool_id: id,
+          input: start?.input,
+          output: joinToolOutput(evt.output),
+          is_error: Boolean(evt.isError),
+          start: startTs,
+          end: tsMs,
+        },
+      })
+      continue
+    }
+    // 其余事件类型（reasoning / patch / session.* 等）不进入时间轴
+  }
+
+  const toolNames = [...new Set(events.filter((e) => e.kind === 'tool').map((e) => e.tool_name))]
+  return {
+    events,
+    min_ts_ms: Number.isFinite(minTs) ? minTs : 0,
+    max_ts_ms: Number.isFinite(maxTs) ? maxTs : 0,
+    tool_names: toolNames,
+    stats: {
+      total_ms: maxTs - minTs,
+      user_count: events.filter((e) => e.kind === 'user').length,
+      llm_count: events.filter((e) => e.kind === 'llm').length,
+      tool_count: events.filter((e) => e.kind === 'tool').length,
+      avg_latency_ms: 0,
+      max_latency_ms: 0,
+    },
+  }
+}
+
 // ── CSV / NDJSON builders ─────────────────────────────────────
 
 export function toCsv(rows: Record<string, unknown>[]): string {

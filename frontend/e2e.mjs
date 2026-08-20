@@ -69,6 +69,24 @@ await page.click('text=原始数据')
 await page.waitForSelector('text=匹配')
 console.log('5. raw tab OK')
 
+// 时间轴 tab（opencode，同款三泳道）——fixture: 1 用户输入 + 4 工具 + 3 轮次
+await page.click('text=时间轴')
+await page.waitForSelector('.wf-row', { timeout: 20000 })
+const ocTlRows = await page.locator('.wf-row').count()
+if (ocTlRows !== 5) throw new Error(`opencode timeline expected 5 rows (1 user + 4 tools), got ${ocTlRows}`)
+const ocTlTurns = await page.locator('.tl-turn-sep').count()
+if (ocTlTurns !== 3) throw new Error(`opencode timeline expected 3 turns (globalStep 1-3), got ${ocTlTurns}`)
+const ocTlLanes = await page.locator('.tl-lane').count()
+if (ocTlLanes !== 3) throw new Error(`expected 3 lanes, got ${ocTlLanes}`)
+const ocKinds = await page.evaluate(() => [...new Set([...document.querySelectorAll('.wf-row')].map((r) => r.getAttribute('data-kind')))].sort().join(','))
+if (ocKinds !== 'tool,user') throw new Error(`opencode fixture rows must be user/tool only, got ${ocKinds}`)
+// 工具行点击 → 面板（Payload 入参 + Result 输出）
+await page.click('.wf-row[data-kind="tool"] >> nth=0')
+await page.waitForSelector('.wf-panel', { timeout: 10000 })
+await page.click('.wf-panel >> text=Result')
+await page.waitForSelector('.wf-panel >> text=done', { timeout: 10000 })
+console.log(`5d. opencode timeline OK (${ocTlRows} rows, ${ocTlTurns} turns, kinds=${ocKinds})`)
+
 // subagent tab: overview with child-trace enrichment + per-subagent details
 await page.click('text=Subagent')
 await page.waitForSelector('text=Subagent 派发概览（共 2 个）', { timeout: 15000 })
