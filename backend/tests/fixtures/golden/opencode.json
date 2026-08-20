@@ -1,0 +1,321 @@
+{
+  "source": "opencode",
+  "raw_events": [
+    {
+      "type": "session.start",
+      "ts": 1700000000000,
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "sessionID": "ses_main",
+      "title": "refactor dashboard"
+    },
+    {
+      "type": "step.start",
+      "ts": 1700000000010,
+      "globalStep": 1
+    },
+    {
+      "type": "text.user",
+      "ts": 1700000000020,
+      "globalStep": 1,
+      "text": "refactor this"
+    },
+    {
+      "type": "tool.start",
+      "ts": 1700000000030,
+      "globalStep": 1,
+      "tool": "task",
+      "toolCallId": "tc_start_a",
+      "args": {
+        "subagent_type": "general-purpose",
+        "description": "Explore the codebase"
+      }
+    },
+    {
+      "type": "tool.finish",
+      "ts": 1700000000530,
+      "globalStep": 1,
+      "tool": "task",
+      "toolCallId": "tc_end_mismatch",
+      "output": "<task id=\"ses_child123\" state=\"completed\">done</task>",
+      "outputSize": 20,
+      "isError": false,
+      "duration": 500
+    },
+    {
+      "type": "step.finish",
+      "ts": 1700000000540,
+      "globalStep": 1,
+      "cumTokens": {
+        "input": 1000,
+        "output": 100
+      },
+      "tokens": {
+        "input": 1000,
+        "output": 100,
+        "reasoning": 50,
+        "cacheRead": 300,
+        "cacheWrite": 20
+      },
+      "reason": "end_turn"
+    },
+    {
+      "type": "step.start",
+      "ts": 1700000000550,
+      "globalStep": 2
+    },
+    {
+      "type": "tool.start",
+      "ts": 1700000000560,
+      "globalStep": 2,
+      "tool": "read",
+      "toolCallId": "tc_r1",
+      "args": {
+        "file_path": "src/lib.rs"
+      }
+    },
+    {
+      "type": "tool.start",
+      "ts": 1700000000561,
+      "globalStep": 2,
+      "tool": "write",
+      "toolCallId": "tc_w1",
+      "args": {
+        "file_path": "src/out.rs"
+      }
+    },
+    {
+      "type": "tool.finish",
+      "ts": 1700000000660,
+      "globalStep": 2,
+      "tool": "read",
+      "toolCallId": "tc_r1",
+      "output": "fn main() {} pub fn add(a: i32, b: i32) -> i32 { a + b }",
+      "outputSize": 57,
+      "isError": false,
+      "duration": 100
+    },
+    {
+      "type": "tool.finish",
+      "ts": 1700000000700,
+      "globalStep": 2,
+      "tool": "write",
+      "toolCallId": "tc_w1",
+      "output": "wrote file",
+      "outputSize": 10,
+      "isError": false,
+      "duration": 139
+    },
+    {
+      "type": "step.finish",
+      "ts": 1700000000710,
+      "globalStep": 2,
+      "cumTokens": {
+        "input": 1600,
+        "output": 250
+      },
+      "tokens": {
+        "input": 600,
+        "output": 150,
+        "reasoning": 80,
+        "cacheRead": 500,
+        "cacheWrite": 10
+      },
+      "reason": "end_turn"
+    },
+    {
+      "type": "step.start",
+      "ts": 1700000000720,
+      "globalStep": 3
+    },
+    {
+      "type": "tool.start",
+      "ts": 1700000000730,
+      "globalStep": 3,
+      "tool": "task",
+      "toolCallId": "tc_start_b",
+      "args": {
+        "subagent_type": "Explore",
+        "description": "find call sites"
+      }
+    },
+    {
+      "type": "tool.start",
+      "ts": 1700000000740,
+      "globalStep": 3,
+      "tool": "grep",
+      "toolCallId": "tc_g1",
+      "args": {
+        "pattern": "TODO"
+      }
+    },
+    {
+      "type": "tool.finish",
+      "ts": 1700000000790,
+      "globalStep": 3,
+      "tool": "grep",
+      "toolCallId": "tc_g1",
+      "output": "src/main.rs:12: TODO fix",
+      "outputSize": 25,
+      "isError": false,
+      "duration": 50
+    },
+    {
+      "type": "step.finish",
+      "ts": 1700000000800,
+      "globalStep": 3,
+      "cumTokens": {
+        "input": 1800,
+        "output": 300
+      },
+      "tokens": {
+        "input": 200,
+        "output": 50,
+        "reasoning": 20,
+        "cacheRead": 150,
+        "cacheWrite": 0
+      },
+      "reason": "end_turn"
+    },
+    {
+      "type": "session.end",
+      "ts": 1700000000810,
+      "totalTokens": {
+        "input": 1800,
+        "output": 300
+      }
+    }
+  ],
+  "session_info": {
+    "model": "anthropic/claude-sonnet-4-20250514",
+    "session_id": "ses_main",
+    "tools_available": [],
+    "title": "refactor dashboard",
+    "permission_mode": ""
+  },
+  "result_info": {
+    "duration_ms": 810,
+    "duration_api_ms": 0,
+    "num_turns": 3,
+    "total_cost_usd": 0.0,
+    "is_error": false,
+    "result_text": "",
+    "total_input": 1800,
+    "total_output": 300,
+    "total_cache_creation": 0,
+    "total_cache_read": 0
+  },
+  "turns": [
+    {
+      "turn_no": 1,
+      "input_tokens": 1000,
+      "output_tokens": 100,
+      "cache_read": 300,
+      "cache_creation": 20,
+      "stop_reason": "end_turn",
+      "text_content": "",
+      "tool_count": 0,
+      "model": "",
+      "reasoning_tokens": 50
+    },
+    {
+      "turn_no": 2,
+      "input_tokens": 1600,
+      "output_tokens": 250,
+      "cache_read": 500,
+      "cache_creation": 10,
+      "stop_reason": "end_turn",
+      "text_content": "",
+      "tool_count": 0,
+      "model": "",
+      "reasoning_tokens": 80
+    },
+    {
+      "turn_no": 3,
+      "input_tokens": 1800,
+      "output_tokens": 300,
+      "cache_read": 150,
+      "cache_creation": 0,
+      "stop_reason": "end_turn",
+      "text_content": "",
+      "tool_count": 0,
+      "model": "",
+      "reasoning_tokens": 20
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "task",
+      "input": {},
+      "output": "<task id=\"ses_child123\" state=\"completed\">done</task>",
+      "is_error": false,
+      "turn_no": 1,
+      "call_idx": 0,
+      "tiktoken_tokens": 13,
+      "output_chars": 20,
+      "duration_ms": 500,
+      "file_path": "",
+      "allotted_tokens": 600
+    },
+    {
+      "name": "read",
+      "input": {},
+      "output": "fn main() {} pub fn add(a: i32, b: i32) -> i32 { a + b }",
+      "is_error": false,
+      "turn_no": 2,
+      "call_idx": 1,
+      "tiktoken_tokens": 14,
+      "output_chars": 57,
+      "duration_ms": 100,
+      "file_path": "",
+      "allotted_tokens": 175
+    },
+    {
+      "name": "write",
+      "input": {},
+      "output": "wrote file",
+      "is_error": false,
+      "turn_no": 2,
+      "call_idx": 2,
+      "tiktoken_tokens": 2,
+      "output_chars": 10,
+      "duration_ms": 139,
+      "file_path": "",
+      "allotted_tokens": 25
+    },
+    {
+      "name": "grep",
+      "input": {},
+      "output": "src/main.rs:12: TODO fix",
+      "is_error": false,
+      "turn_no": 3,
+      "call_idx": 3,
+      "tiktoken_tokens": 6,
+      "output_chars": 25,
+      "duration_ms": 50,
+      "file_path": "",
+      "allotted_tokens": 0
+    }
+  ],
+  "parse_errors": 0,
+  "parse_debug": {},
+  "subagents": [
+    {
+      "childSessionID": "ses_child123",
+      "agentName": "",
+      "description": "",
+      "state": "completed",
+      "globalStep": 1,
+      "ts": 1700000000530,
+      "dispatchDurationMs": 500
+    },
+    {
+      "childSessionID": "",
+      "agentName": "Explore",
+      "description": "find call sites",
+      "state": "running",
+      "globalStep": 3,
+      "ts": 1700000000730,
+      "dispatchDurationMs": null
+    }
+  ]
+}
