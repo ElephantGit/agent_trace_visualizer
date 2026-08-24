@@ -385,6 +385,33 @@ await page.waitForSelector('text=请选择一个 transcript 文件', { timeout: 
 rmSync(LIVE_DIR, { recursive: true, force: true })
 console.log('14e. exit live OK + cleanup')
 
+// ── 15. 实时监控自动跟随：新会话出现后自动切换监控目标 ──────────
+const FOLLOW_DIR = jn(hd(), '.claude/projects/e2e-live-follow')
+rmSync(FOLLOW_DIR, { recursive: true, force: true })
+mkdirp(FOLLOW_DIR, { recursive: true })
+const FOLLOW_A = jn(FOLLOW_DIR, 'session-a.jsonl')
+const FOLLOW_B = jn(FOLLOW_DIR, 'session-b.jsonl')
+wf(FOLLOW_A,
+  liveLine('fo-a1', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'file A' }], usage: { input_tokens: 5, output_tokens: 2 }, stop_reason: 'end_turn' }) +
+  liveLine('fo-a2', 'user', { role: 'user', content: 'a' })
+)
+await page.goto(`${BASE}/claude-code`)
+await page.click('text=🔴 实时监控')
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.waitForSelector('.wf-row', { timeout: 15000 })
+// B 出现且更新 → 自动跟随应切换到 B
+wf(FOLLOW_B,
+  liveLine('fo-b1', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'file B' }], usage: { input_tokens: 5, output_tokens: 2 }, stop_reason: 'end_turn' }) +
+  liveLine('fo-b2', 'user', { role: 'user', content: 'b' })
+)
+await page.waitForFunction(
+  () => document.querySelector('.live-banner')?.textContent?.includes('session-b.jsonl'),
+  null,
+  { timeout: 25000 },
+)
+console.log('15. live auto-follow switched to newest session OK')
+rmSync(FOLLOW_DIR, { recursive: true, force: true })
+
 await browser.close()
 
 if (errors.length > 0) {

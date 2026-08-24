@@ -268,6 +268,11 @@ impl LineReader {
         Self::default()
     }
 
+    /// 当前已读到的文件偏移（诊断用）。
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
     /// 跳到当前文件末尾（此后只监控新增的行——SSE 握手场景）。
     pub fn seek_end(&mut self, path: &std::path::Path) {
         if let Ok(m) = std::fs::metadata(path) {

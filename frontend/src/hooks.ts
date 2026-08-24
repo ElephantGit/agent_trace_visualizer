@@ -14,6 +14,14 @@ export interface LiveStreamState {
   rawEvents: unknown[]
   status: LiveStatus
   paused: boolean
+  /// 当前实际监控的文件路径（自动跟随时可能切换到更新的会话）
+  path: string | null
+  /// 是否处于自动跟随模式（手动选择具体文件后关闭）
+  autoFollow: boolean
+  /// 手动指定要监控的文件（关闭自动跟随）
+  follow: (path: string) => void
+  /// 回到自动跟随最新会话模式并立即跳转到当前最新文件
+  followLatest: () => void
   pause: () => void
   resume: () => void
 }
@@ -23,7 +31,13 @@ export interface LiveStreamState {
 /// - EventSource 连接 /api/live 接收增量行；连续 3 次失败降级为 2s 轮询
 /// - 按 uuid 去重（重连后同事件可能重发）
 /// - 暂停：冻结事件追加（连接保持）
-export function useLiveStream(path: string | null): LiveStreamState {
+/// - 自动跟随：每 3s 查询 /api/live/latest，当另一个文件在最近 15s 内
+///   有写入、且当前文件已 10s 无新事件时，切换到那个更新的会话
+///   （用户先点监控再开新会话、或多会话并行的场景）；
+///   手动选择文件后关闭自动跟随，可随时切回。
+export function useLiveStream(initialPath: string | null): LiveStreamState {
+  const [path, setPath] = useState(initialPath)
+  const [autoFollow, setAutoFollow] = useState(true)
   const [rawEvents, setRawEvents] = useState<unknown[]>([])
   const [status, setStatus] = useState<LiveStatus>('idle')
   const [paused, setPaused] = useState(false)
@@ -32,6 +46,8 @@ export function useLiveStream(path: string | null): LiveStreamState {
   const pausedRef = useRef(paused)
   pausedRef.current = paused
   const seenUuids = useRef<Set<string>>(new Set())
+  // 最近一次追加事件的时间——用于判断"当前文件是否安静"
+  const lastAppendAt = useRef<number>(Date.now())
 
   const appendEvents = (events: unknown[]) => {
     if (pausedRef.current) return
@@ -43,11 +59,13 @@ export function useLiveStream(path: string | null): LiveStreamState {
         seenUuids.current.add(String(u))
         return true
       })
+      if (fresh.length) lastAppendAt.current = Date.now()
       return fresh.length ? [...prev, ...fresh] : prev
     })
   }
 
-  // 初始全量加载
+  // 初始全量加载。注意与 SSE 增量的竞态：解析期间 SSE 已追加的新事件
+  // 不能被子集替换丢失——按 uuid 合并（全量在前、解析期增量在后）。
   useEffect(() => {
     if (!path) return
     setStatus('loading')
@@ -60,11 +78,44 @@ export function useLiveStream(path: string | null): LiveStreamState {
           const u = (e as Record<string, unknown>).uuid
           if (u !== undefined) seenUuids.current.add(String(u))
         }
-        setRawEvents(r.raw_events)
+        setRawEvents((prev) => {
+          const inResult = new Set(
+            r.raw_events
+              .map((e) => (e as Record<string, unknown>).uuid)
+              .filter((u): u is string | number | boolean => u !== undefined)
+              .map(String),
+          )
+          const extra = prev.filter((e) => {
+            const u = (e as Record<string, unknown>).uuid
+            return u === undefined || !inResult.has(String(u))
+          })
+          return [...r.raw_events, ...extra]
+        })
+        lastAppendAt.current = Date.now()
         setStatus('live')
       })
       .catch(() => setStatus('error'))
   }, [path, reloadTick])
+
+  // 自动跟随最新活跃会话：当前文件安静 10s+ 且另有文件 15s 内有写入 → 切换
+  useEffect(() => {
+    if (!path || !autoFollow) return
+    const timer = setInterval(async () => {
+      try {
+        const latest = await api.liveLatest()
+        if (
+          latest.path !== path &&
+          Date.now() - lastAppendAt.current > 10_000 &&
+          Date.now() - latest.mtimeMs < 15_000
+        ) {
+          setPath(latest.path)
+        }
+      } catch {
+        // 单次失败忽略，下轮重试
+      }
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [path, autoFollow])
 
   // SSE 订阅 + 轮询降级
   useEffect(() => {
@@ -135,6 +186,19 @@ export function useLiveStream(path: string | null): LiveStreamState {
     rawEvents,
     status,
     paused,
+    path,
+    autoFollow,
+    follow: (p: string) => {
+      setAutoFollow(false)
+      setPath(p)
+    },
+    followLatest: () => {
+      setAutoFollow(true)
+      api
+        .liveLatest()
+        .then((latest) => setPath(latest.path))
+        .catch(() => {})
+    },
     pause: () => setPaused(true),
     resume: () => {
       setPaused(false)

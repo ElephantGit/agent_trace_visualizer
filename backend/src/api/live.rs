@@ -65,6 +65,7 @@ pub async fn live_handler(
         let mut reader = LineReader::new();
         // 握手：当前文件行数（前端用于对齐）
         let line_count = count_lines(&path);
+        tracing::info!("[live] SSE connected: path={} lineCount={line_count}", q.path);
         yield Ok(Event::default()
             .event("init")
             .data(json!({ "lineCount": line_count, "path": q.path }).to_string()));
@@ -73,10 +74,16 @@ pub async fn live_handler(
         reader.seek_end(&path);
 
         let mut interval = tokio::time::interval(POLL_INTERVAL);
+        let mut ticks: u64 = 0;
         loop {
             interval.tick().await;
+            ticks += 1;
+            let file_len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
             match reader.read_since(&path) {
                 Ok(lines) => {
+                    if !lines.is_empty() {
+                        tracing::debug!("[live] tick={ticks} file_len={file_len} offset={} got={}", reader.offset(), lines.len());
+                    }
                     for line in lines {
                         // transcript 行均为 JSON；非 JSON 行（理论上不应出现）跳过
                         if serde_json::from_str::<serde_json::Value>(&line).is_ok() {
@@ -84,8 +91,9 @@ pub async fn live_handler(
                         }
                     }
                 }
-                Err(_) => {
+                Err(e) => {
                     // 文件暂时不可读（被锁/删除）——静默等待下一轮
+                    tracing::warn!("[live] read_since error: {e}");
                 }
             }
         }
