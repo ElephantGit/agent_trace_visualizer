@@ -3,6 +3,7 @@
 pub mod derive;
 pub mod embedded;
 pub mod errors;
+pub mod live;
 pub mod parse;
 pub mod traces;
 pub mod workflow;
@@ -29,6 +30,8 @@ pub fn router() -> Router {
             get(embedded::embedded_handler),
         )
         .route("/api/traces", get(traces::traces_handler))
+        .route("/api/live", get(live::live_handler))
+        .route("/api/live/latest", get(live::live_latest_handler))
         .route("/api/subagent/{session_id}", post(parse::subagent_handler))
         .route("/api/derive/replay", post(derive::replay_handler))
         .route("/api/derive/mermaid", post(derive::mermaid_handler))

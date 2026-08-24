@@ -69,6 +69,24 @@ await page.click('text=原始数据')
 await page.waitForSelector('text=匹配')
 console.log('5. raw tab OK')
 
+// 时间轴 tab（opencode，同款三泳道）——fixture: 1 用户输入 + 4 工具 + 3 轮次
+await page.click('text=时间轴')
+await page.waitForSelector('.wf-row', { timeout: 20000 })
+const ocTlRows = await page.locator('.wf-row').count()
+if (ocTlRows !== 5) throw new Error(`opencode timeline expected 5 rows (1 user + 4 tools), got ${ocTlRows}`)
+const ocTlTurns = await page.locator('.tl-turn-sep').count()
+if (ocTlTurns !== 3) throw new Error(`opencode timeline expected 3 turns (globalStep 1-3), got ${ocTlTurns}`)
+const ocTlLanes = await page.locator('.tl-lane').count()
+if (ocTlLanes !== 3) throw new Error(`expected 3 lanes, got ${ocTlLanes}`)
+const ocKinds = await page.evaluate(() => [...new Set([...document.querySelectorAll('.wf-row')].map((r) => r.getAttribute('data-kind')))].sort().join(','))
+if (ocKinds !== 'tool,user') throw new Error(`opencode fixture rows must be user/tool only, got ${ocKinds}`)
+// 工具行点击 → 面板（Payload 入参 + Result 输出）
+await page.click('.wf-row[data-kind="tool"] >> nth=0')
+await page.waitForSelector('.wf-panel', { timeout: 10000 })
+await page.click('.wf-panel >> text=Result')
+await page.waitForSelector('.wf-panel >> text=done', { timeout: 10000 })
+console.log(`5d. opencode timeline OK (${ocTlRows} rows, ${ocTlTurns} turns, kinds=${ocKinds})`)
+
 // subagent tab: overview with child-trace enrichment + per-subagent details
 await page.click('text=Subagent')
 await page.waitForSelector('text=Subagent 派发概览（共 2 个）', { timeout: 15000 })
@@ -311,6 +329,95 @@ await page.screenshot({ path: `${OUT}/12-compare.png`, fullPage: true })
 await page.goto(`${BASE}/opencode`)
 await page.waitForSelector('text=Opencode')
 console.log('13. SPA fallback route OK')
+
+// ── 14. 实时监控（SSE 推送 + 暂停/恢复 + 退出）────────────────
+import { appendFileSync, rmSync, writeFileSync as wf } from 'node:fs'
+import { homedir as hd } from 'node:os'
+import { join as jn } from 'node:path'
+const LIVE_DIR = jn(hd(), '.claude/projects/e2e-live-monitor')
+rmSync(LIVE_DIR, { recursive: true, force: true })
+mkdirp(LIVE_DIR, { recursive: true })
+const LIVE_FILE = jn(LIVE_DIR, 'session.jsonl')
+const liveLine = (uuid, type, message, extra = {}) =>
+  JSON.stringify({
+    type, uuid, parentUuid: 'p', timestamp: new Date().toISOString(),
+    sessionId: 'e2e-live', cwd: '/tmp', version: '2.0.0', message, ...extra,
+  }) + '\n'
+wf(LIVE_FILE,
+  liveLine('lv-u1', 'user', { role: 'user', content: 'live hello' }) +
+  liveLine('lv-a1', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'live reply' }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) +
+  liveLine('lv-a2', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'tool_use', id: 'lv-t1', name: 'Bash', input: { command: 'ls' } }], usage: { input_tokens: 20, output_tokens: 3 }, stop_reason: 'tool_use' }) +
+  liveLine('lv-u2', 'user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'lv-t1', content: 'file1\nfile2' }] })
+)
+
+await page.goto(`${BASE}/claude-code`)
+await page.click('text=🔴 实时监控')
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.waitForSelector('.wf-row', { timeout: 15000 })
+const liveInitialRows = await page.locator('.wf-row').count()
+// 初始：1 用户 + 1 模型文本 + 1 工具(合并) = 3
+if (liveInitialRows !== 3) throw new Error(`live initial rows expected 3, got ${liveInitialRows}`)
+console.log(`14. live monitor entered (${liveInitialRows} initial rows)`)
+
+// 追加一个模型文本事件 → 行数增长且新行高亮（闪光仅持续 2.5s，
+// 两个条件放在同一个等待谓词里避免与闪光窗口赛跑）
+appendFileSync(LIVE_FILE, liveLine('lv-a3', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'live streaming event' }], usage: { input_tokens: 30, output_tokens: 7 }, stop_reason: 'end_turn' }))
+await page.waitForFunction(
+  () => document.querySelectorAll('.wf-row').length === 4 && document.querySelectorAll('.wf-row-live').length >= 1,
+  null,
+  { timeout: 10000 },
+)
+console.log('14b. live append + highlight OK (4 rows)')
+
+// 暂停 → 追加不再增长
+await page.click('text=⏸ 暂停')
+appendFileSync(LIVE_FILE, liveLine('lv-a4', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'paused event' }], usage: { input_tokens: 40, output_tokens: 2 }, stop_reason: 'end_turn' }))
+await page.waitForTimeout(2500)
+const pausedRows = await page.locator('.wf-row').count()
+if (pausedRows !== 4) throw new Error(`paused rows should stay 4, got ${pausedRows}`)
+console.log('14c. pause freezes events OK')
+
+// 恢复 → 追加上线
+await page.click('text=▶ 恢复')
+await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 5, null, { timeout: 10000 })
+console.log('14d. resume catches up OK (5 rows)')
+
+// 退出实时 → 回到常规页面
+await page.click('text=退出实时')
+await page.waitForSelector('text=请选择一个 transcript 文件', { timeout: 10000 })
+rmSync(LIVE_DIR, { recursive: true, force: true })
+console.log('14e. exit live OK + cleanup')
+
+// ── 15. 实时监控自动跟随：新会话出现后自动切换监控目标 ──────────
+const FOLLOW_DIR = jn(hd(), '.claude/projects/e2e-live-follow')
+rmSync(FOLLOW_DIR, { recursive: true, force: true })
+mkdirp(FOLLOW_DIR, { recursive: true })
+const FOLLOW_A = jn(FOLLOW_DIR, 'session-a.jsonl')
+const FOLLOW_B = jn(FOLLOW_DIR, 'session-b.jsonl')
+// 注意：至少 4 行（同步骤 14 的种子），保证格式自动探测判定为
+// transcript——2 行文件会被误判为 stream-json，时间轴 tab 不出现。
+wf(FOLLOW_A,
+  liveLine('fo-a1', 'user', { role: 'user', content: 'hello A' }) +
+  liveLine('fo-a2', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'file A' }], usage: { input_tokens: 5, output_tokens: 2 }, stop_reason: 'tool_use' }) +
+  liveLine('fo-a3', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'tool_use', id: 'fo-t1', name: 'Bash', input: { command: 'ls' } }], usage: { input_tokens: 6, output_tokens: 2 }, stop_reason: 'tool_use' }) +
+  liveLine('fo-a4', 'user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'fo-t1', content: 'ok' }] })
+)
+await page.goto(`${BASE}/claude-code`)
+await page.click('text=🔴 实时监控')
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.waitForSelector('.wf-row', { timeout: 15000 })
+// B 出现且更新 → 自动跟随应切换到 B
+wf(FOLLOW_B,
+  liveLine('fo-b1', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'file B' }], usage: { input_tokens: 5, output_tokens: 2 }, stop_reason: 'end_turn' }) +
+  liveLine('fo-b2', 'user', { role: 'user', content: 'b' })
+)
+await page.waitForFunction(
+  () => document.querySelector('.live-banner')?.textContent?.includes('session-b.jsonl'),
+  null,
+  { timeout: 25000 },
+)
+console.log('15. live auto-follow switched to newest session OK')
+rmSync(FOLLOW_DIR, { recursive: true, force: true })
 
 await browser.close()
 

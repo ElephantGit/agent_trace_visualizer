@@ -3,7 +3,8 @@
 
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useParse, useTraces } from '../../hooks'
+import { useLiveStream, useParse, useTraces } from '../../hooks'
+import { buildTimeline } from '../../derive'
 import { api } from '../../api/client'
 import { FileUpload, ErrorBanner, Info, Pills } from '../../components/ui/primitives'
 import type { AgentType, ParseResult, TraceEntry } from '../../api/types'
@@ -17,6 +18,18 @@ export default function ClaudeCodeView() {
   const [content, setContent] = useState<ArrayBuffer | null>(null)
   const [name, setName] = useState('')
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [livePath, setLivePath] = useState<string | null>(null)
+  const [liveError, setLiveError] = useState<string | null>(null)
+
+  const startLive = async () => {
+    try {
+      const latest = await api.liveLatest()
+      setLiveError(null)
+      setLivePath(latest.path)
+    } catch (e) {
+      setLiveError(String(e))
+    }
+  }
 
   const traces = useTraces(undefined)
   const pathResult = useQuery({
@@ -42,6 +55,13 @@ export default function ClaudeCodeView() {
         <Link className="btn" to="/">← 返回选择页</Link>
         <hr />
         <h3>Claude Code</h3>
+        <button className="btn btn-primary" style={{ width: '100%' }} onClick={startLive}>
+          🔴 实时监控
+        </button>
+        {liveError && <p className="muted" style={{ color: '#991b1b' }}>{liveError}</p>}
+        <p className="muted">
+          监控当前正在进行的会话（自动定位 ~/.claude/projects 下最近活跃的 transcript）
+        </p>
         <Pills
           options={['交互会话记录', '上传文件']}
           selected={[mode === 'browse' ? '交互会话记录' : '上传文件']}
@@ -61,8 +81,7 @@ export default function ClaudeCodeView() {
               {sorted.slice(0, 200).map((t: TraceEntry) => (
                 <button
                   key={t.path}
-                  className={`btn ${t.path === selectedPath ? 'btn-primary' : ''}`}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', margin: '3px 0', fontSize: '0.78em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  className={`btn trace-btn ${t.path === selectedPath ? 'btn-primary' : ''}`}
                   title={t.path}
                   onClick={() => setSelectedPath(t.path)}
                 >
@@ -90,15 +109,93 @@ export default function ClaudeCodeView() {
         )}
         {error && <ErrorBanner>{String(error)}</ErrorBanner>}
       </aside>
-      <div className="main">
-        {isLoading && <p className="muted">解析中…</p>}
-        {result && <ClaudeBody result={result} />}
-        {!result && !isLoading && (
-          <p className="muted">
-            {mode === 'browse' ? '请选择一个 transcript 文件。' : '请先上传一个 trace 文件。'}
-          </p>
+      <div className="main" id="main">
+        {livePath ? (
+          <LiveMonitor path={livePath} onExit={() => setLivePath(null)} />
+        ) : (
+          <>
+            {isLoading && <p className="muted">解析中…</p>}
+            {result && <ClaudeBody result={result} />}
+            {!result && !isLoading && (
+              <p className="muted">
+                {mode === 'browse' ? '请选择一个 transcript 文件。' : '请先上传一个 trace 文件。'}
+              </p>
+            )}
+          </>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── 实时监控视图 ─────────────────────────────────────────────
+
+const LIVE_STATUS_LABEL: Record<string, string> = {
+  loading: '加载中…',
+  live: 'SSE 实时',
+  polling: '轮询降级',
+  error: '加载失败',
+}
+
+/// 会话下拉框的短标签：太长会撑破下拉框固有宽度，截断显示尾部
+/// （完整文件名已在横幅标题中展示）。
+function shortTraceLabel(path: string): string {
+  const rel = path.replace(/^.*\/projects\//, '')
+  return rel.length > 52 ? `…${rel.slice(-51)}` : rel
+}
+
+function LiveMonitor({ path: initialPath, onExit }: { path: string; onExit: () => void }) {
+  const { rawEvents, result, status, paused, path, autoFollow, follow, followLatest, pause, resume } =
+    useLiveStream(initialPath)
+  const model = useMemo(() => buildTimeline(rawEvents), [rawEvents])
+  const traces = useTraces(undefined)
+  const recent = useMemo(
+    () => [...(traces.data ?? [])].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 10),
+    [traces.data],
+  )
+
+  return (
+    <div>
+      <div className="live-banner">
+        <span className="live-dot" />
+        <span className="live-title">
+          LIVE · {path?.split('/').pop()} · {model.events.length} 个事件 ·{' '}
+          {LIVE_STATUS_LABEL[status] ?? status}
+          {paused ? ' · 已暂停' : ''}
+        </span>
+        <select
+          className="pill-input"
+          value={autoFollow ? '__auto__' : (path ?? '__auto__')}
+          onChange={(e) => {
+            const v = e.target.value
+            if (v === '__auto__') followLatest()
+            else follow(v)
+          }}
+        >
+          <option value="__auto__">🔄 自动跟随最新会话</option>
+          {recent.map((t) => (
+            <option key={t.path} value={t.path}>
+              {shortTraceLabel(t.path)}
+            </option>
+          ))}
+        </select>
+        <button className="btn" onClick={paused ? resume : pause}>
+          {paused ? '▶ 恢复' : '⏸ 暂停'}
+        </button>
+        <button className="btn" onClick={onExit}>
+          退出实时
+        </button>
+      </div>
+      <p className="muted" style={{ margin: '6px 0' }}>
+        {autoFollow
+          ? '自动跟随中：监控最新的活跃会话；当其他会话更活跃时自动切换（当前会话 10s 无新事件时触发）。也可在上方手动固定某个会话。'
+          : '已固定监控上方选中的会话；可切回「🔄 自动跟随最新会话」。'}
+      </p>
+      {status === 'loading' && <p className="muted">正在加载会话内容…</p>}
+      {status === 'error' && <p className="muted">会话加载失败，请检查文件是否存在。</p>}
+      {result && (
+        <ClaudeBody result={result} live={!paused} liveEvents={rawEvents} initialTab="timeline" />
+      )}
     </div>
   )
 }
