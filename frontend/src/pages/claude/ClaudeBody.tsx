@@ -24,12 +24,21 @@ import {
 export default function ClaudeBody({
   result,
   embedded = false,
+  live = false,
+  liveEvents,
+  initialTab,
 }: {
   result: ParseResult
   embedded?: boolean
+  /// 实时监控模式：时间轴自动滚动 + 新行高亮；各 tab 随节流刷新更新
+  live?: boolean
+  /// 实时模式下的即时事件流（SSE 毫秒级）；未提供时用 result.raw_events
+  liveEvents?: unknown[]
+  /// 初始选中的 tab（实时模式默认落在时间轴）
+  initialTab?: string
 }) {
   const isTranscript = result.parse_debug.format === 'transcript'
-  const [tab, setTab] = useState('replay')
+  const [tab, setTab] = useState(initialTab ?? 'replay')
   const replay = useReplay('claude_code', result.raw_events)
   const workflowTree = useWorkflowTree(result)
   const mermaid = useMermaid({
@@ -91,7 +100,9 @@ export default function ClaudeBody({
 
       {tab === 'tokens' && <TokensTab result={result} />}
 
-      {tab === 'timeline' && isTranscript && <TimelineTab rawEvents={result.raw_events} />}
+      {tab === 'timeline' && isTranscript && (
+        <TimelineTab rawEvents={liveEvents ?? result.raw_events} live={live} />
+      )}
 
       {tab === 'tools' && (
         <div>
@@ -210,7 +221,7 @@ function TokensTab({ result }: { result: ParseResult }) {
       x: rows.map((r) => r.turn_no),
       y: rows.map((r) => r.output_tokens),
       name: 'Output',
-      line: { color: '#34a853', width: 2 },
+      line: { color: '#0a9e6a', width: 2 },
     },
   ]
   if (showCacheLines && hasCache) {
@@ -257,7 +268,7 @@ function TokensTab({ result }: { result: ParseResult }) {
       <Plot
         data={[
           { type: 'bar', x: rows.map((_, i) => i), y: rows.map((r) => r.input_delta), name: 'Input Δ', marker: { color: '#1a73e8' } },
-          { type: 'bar', x: rows.map((_, i) => i), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#34a853' } },
+          { type: 'bar', x: rows.map((_, i) => i), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#0a9e6a' } },
         ]}
         layout={{ barmode: 'group', height: 300, margin: { t: 10, b: 40 }, xaxis: { title: '有效数据点' }, yaxis: { title: 'Tokens' } }}
       />
@@ -374,9 +385,9 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 // ── Timeline (transcript only)：共享 TimelineView ─────────────
 
-function TimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
+function TimelineTab({ rawEvents, live = false }: { rawEvents: unknown[]; live?: boolean }) {
   const model = useMemo(() => buildTimeline(rawEvents), [rawEvents])
-  return <TimelineView model={model} />
+  return <TimelineView model={model} live={live} />
 }
 
 // ── Cost analysis ─────────────────────────────────────────────
@@ -413,7 +424,7 @@ function CostTab({ result }: { result: ParseResult }) {
       <h3>API 等待 vs 本地处理</h3>
       <Plot
         data={[
-          { type: 'bar', x: ['API 等待', '本地处理'], y: [apiMs, localMs], marker: { color: ['#ea4335', '#34a853'] } },
+          { type: 'bar', x: ['API 等待', '本地处理'], y: [apiMs, localMs], marker: { color: ['#ea4335', '#0a9e6a'] } },
         ]}
         layout={{ height: 260, margin: { t: 20, b: 40 }, yaxis: { title: 'ms' } }}
       />

@@ -359,11 +359,14 @@ const liveInitialRows = await page.locator('.wf-row').count()
 if (liveInitialRows !== 3) throw new Error(`live initial rows expected 3, got ${liveInitialRows}`)
 console.log(`14. live monitor entered (${liveInitialRows} initial rows)`)
 
-// 追加一个模型文本事件 → 行数增长且新行高亮
+// 追加一个模型文本事件 → 行数增长且新行高亮（闪光仅持续 2.5s，
+// 两个条件放在同一个等待谓词里避免与闪光窗口赛跑）
 appendFileSync(LIVE_FILE, liveLine('lv-a3', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'live streaming event' }], usage: { input_tokens: 30, output_tokens: 7 }, stop_reason: 'end_turn' }))
-await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 4, null, { timeout: 10000 })
-const liveFlash = await page.locator('.wf-row-live').count()
-if (liveFlash < 1) throw new Error('new live row should flash-highlight')
+await page.waitForFunction(
+  () => document.querySelectorAll('.wf-row').length === 4 && document.querySelectorAll('.wf-row-live').length >= 1,
+  null,
+  { timeout: 10000 },
+)
 console.log('14b. live append + highlight OK (4 rows)')
 
 // 暂停 → 追加不再增长
@@ -391,9 +394,13 @@ rmSync(FOLLOW_DIR, { recursive: true, force: true })
 mkdirp(FOLLOW_DIR, { recursive: true })
 const FOLLOW_A = jn(FOLLOW_DIR, 'session-a.jsonl')
 const FOLLOW_B = jn(FOLLOW_DIR, 'session-b.jsonl')
+// 注意：至少 4 行（同步骤 14 的种子），保证格式自动探测判定为
+// transcript——2 行文件会被误判为 stream-json，时间轴 tab 不出现。
 wf(FOLLOW_A,
-  liveLine('fo-a1', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'file A' }], usage: { input_tokens: 5, output_tokens: 2 }, stop_reason: 'end_turn' }) +
-  liveLine('fo-a2', 'user', { role: 'user', content: 'a' })
+  liveLine('fo-a1', 'user', { role: 'user', content: 'hello A' }) +
+  liveLine('fo-a2', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'file A' }], usage: { input_tokens: 5, output_tokens: 2 }, stop_reason: 'tool_use' }) +
+  liveLine('fo-a3', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'tool_use', id: 'fo-t1', name: 'Bash', input: { command: 'ls' } }], usage: { input_tokens: 6, output_tokens: 2 }, stop_reason: 'tool_use' }) +
+  liveLine('fo-a4', 'user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'fo-t1', content: 'ok' }] })
 )
 await page.goto(`${BASE}/claude-code`)
 await page.click('text=🔴 实时监控')

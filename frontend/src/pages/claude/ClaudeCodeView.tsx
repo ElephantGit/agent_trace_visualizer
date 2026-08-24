@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLiveStream, useParse, useTraces } from '../../hooks'
 import { buildTimeline } from '../../derive'
-import TimelineView from '../../components/TimelineView'
 import { api } from '../../api/client'
 import { FileUpload, ErrorBanner, Info, Pills } from '../../components/ui/primitives'
 import type { AgentType, ParseResult, TraceEntry } from '../../api/types'
@@ -139,7 +138,7 @@ const LIVE_STATUS_LABEL: Record<string, string> = {
 }
 
 function LiveMonitor({ path: initialPath, onExit }: { path: string; onExit: () => void }) {
-  const { rawEvents, status, paused, path, autoFollow, follow, followLatest, pause, resume } =
+  const { rawEvents, result, status, paused, path, autoFollow, follow, followLatest, pause, resume } =
     useLiveStream(initialPath)
   const model = useMemo(() => buildTimeline(rawEvents), [rawEvents])
   const traces = useTraces(undefined)
@@ -187,7 +186,9 @@ function LiveMonitor({ path: initialPath, onExit }: { path: string; onExit: () =
       </p>
       {status === 'loading' && <p className="muted">正在加载会话内容…</p>}
       {status === 'error' && <p className="muted">会话加载失败，请检查文件是否存在。</p>}
-      {rawEvents.length > 0 && <TimelineView model={model} live={!paused} />}
+      {result && (
+        <ClaudeBody result={result} live={!paused} liveEvents={rawEvents} initialTab="timeline" />
+      )}
     </div>
   )
 }
