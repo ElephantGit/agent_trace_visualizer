@@ -501,3 +501,37 @@ th { background: #f8fafc; position: sticky; top: 0; }
   resize: vertical;
 }
 @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } .shell { flex-direction: column; } .sidebar { position: static; flex: none; width: 100%; } }
+
+/* ── 实时监控 ──────────────────────────────────────────────── */
+
+.live-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  background: #fef2f2;
+  margin-bottom: 10px;
+  position: sticky;
+  top: 8px;
+  z-index: 10;
+}
+.live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: live-pulse 1.5s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.live-title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-row-live { animation: live-flash 2.5s ease-out; }
+@keyframes live-flash {
+  0% { background: #fef08a; }
+  100% { background: transparent; }
+}

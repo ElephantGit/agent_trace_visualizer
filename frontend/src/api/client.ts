@@ -90,4 +90,7 @@ export const api = {
     }),
 
   reactflow: () => request<unknown>('/api/workflow/reactflow'),
+
+  liveLatest: () =>
+    request<{ path: string; mtimeMs: number; active: boolean }>('/api/live/latest'),
 }

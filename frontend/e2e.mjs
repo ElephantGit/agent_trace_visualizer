@@ -330,6 +330,61 @@ await page.goto(`${BASE}/opencode`)
 await page.waitForSelector('text=Opencode')
 console.log('13. SPA fallback route OK')
 
+// ── 14. 实时监控（SSE 推送 + 暂停/恢复 + 退出）────────────────
+import { appendFileSync, rmSync, writeFileSync as wf } from 'node:fs'
+import { homedir as hd } from 'node:os'
+import { join as jn } from 'node:path'
+const LIVE_DIR = jn(hd(), '.claude/projects/e2e-live-monitor')
+rmSync(LIVE_DIR, { recursive: true, force: true })
+mkdirp(LIVE_DIR, { recursive: true })
+const LIVE_FILE = jn(LIVE_DIR, 'session.jsonl')
+const liveLine = (uuid, type, message, extra = {}) =>
+  JSON.stringify({
+    type, uuid, parentUuid: 'p', timestamp: new Date().toISOString(),
+    sessionId: 'e2e-live', cwd: '/tmp', version: '2.0.0', message, ...extra,
+  }) + '\n'
+wf(LIVE_FILE,
+  liveLine('lv-u1', 'user', { role: 'user', content: 'live hello' }) +
+  liveLine('lv-a1', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'live reply' }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) +
+  liveLine('lv-a2', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'tool_use', id: 'lv-t1', name: 'Bash', input: { command: 'ls' } }], usage: { input_tokens: 20, output_tokens: 3 }, stop_reason: 'tool_use' }) +
+  liveLine('lv-u2', 'user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'lv-t1', content: 'file1\nfile2' }] })
+)
+
+await page.goto(`${BASE}/claude-code`)
+await page.click('text=🔴 实时监控')
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.waitForSelector('.wf-row', { timeout: 15000 })
+const liveInitialRows = await page.locator('.wf-row').count()
+// 初始：1 用户 + 1 模型文本 + 1 工具(合并) = 3
+if (liveInitialRows !== 3) throw new Error(`live initial rows expected 3, got ${liveInitialRows}`)
+console.log(`14. live monitor entered (${liveInitialRows} initial rows)`)
+
+// 追加一个模型文本事件 → 行数增长且新行高亮
+appendFileSync(LIVE_FILE, liveLine('lv-a3', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'live streaming event' }], usage: { input_tokens: 30, output_tokens: 7 }, stop_reason: 'end_turn' }))
+await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 4, null, { timeout: 10000 })
+const liveFlash = await page.locator('.wf-row-live').count()
+if (liveFlash < 1) throw new Error('new live row should flash-highlight')
+console.log('14b. live append + highlight OK (4 rows)')
+
+// 暂停 → 追加不再增长
+await page.click('text=⏸ 暂停')
+appendFileSync(LIVE_FILE, liveLine('lv-a4', 'assistant', { role: 'assistant', model: 'm', content: [{ type: 'text', text: 'paused event' }], usage: { input_tokens: 40, output_tokens: 2 }, stop_reason: 'end_turn' }))
+await page.waitForTimeout(2500)
+const pausedRows = await page.locator('.wf-row').count()
+if (pausedRows !== 4) throw new Error(`paused rows should stay 4, got ${pausedRows}`)
+console.log('14c. pause freezes events OK')
+
+// 恢复 → 追加上线
+await page.click('text=▶ 恢复')
+await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 5, null, { timeout: 10000 })
+console.log('14d. resume catches up OK (5 rows)')
+
+// 退出实时 → 回到常规页面
+await page.click('text=退出实时')
+await page.waitForSelector('text=请选择一个 transcript 文件', { timeout: 10000 })
+rmSync(LIVE_DIR, { recursive: true, force: true })
+console.log('14e. exit live OK + cleanup')
+
 await browser.close()
 
 if (errors.length > 0) {

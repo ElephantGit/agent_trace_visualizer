@@ -3,7 +3,7 @@
 // 只展示三种核心信息：用户输入 / 模型文本输出 / 工具调用+结果。
 // 数据由调用方通过 buildTimeline / buildTimelineOpencode 构建。
 
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { TimelineEvent, TimelineModel, TimelineKind } from '../derive'
 import { formatDuration, grouped } from '../derive'
 import { plotColors } from './Plot'
@@ -58,7 +58,7 @@ interface Brush {
   end_ms: number
 }
 
-export default function TimelineView({ model }: { model: TimelineModel }) {
+export default function TimelineView({ model, live = false }: { model: TimelineModel; live?: boolean }) {
   const [kinds, setKinds] = useState<Set<string>>(new Set(['user', 'llm', 'tool']))
   const [keyword, setKeyword] = useState('')
   const [brush, setBrush] = useState<Brush | null>(null)
@@ -110,6 +110,27 @@ export default function TimelineView({ model }: { model: TimelineModel }) {
 
   const selectByIdx = (i: number) => setSelected(selected === i ? null : i)
 
+  // live 模式：新事件行短暂高亮 + 自动滚动到底部
+  const listRef = useRef<HTMLDivElement>(null)
+  const [flashAfterTs, setFlashAfterTs] = useState<number | null>(null)
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const prevCountRef = useRef(model.events.length)
+  useEffect(() => {
+    const grew = model.events.length > prevCountRef.current
+    const prevMax = prevCountRef.current > 0 ? model.events[prevCountRef.current - 1]?.ts_ms : 0
+    prevCountRef.current = model.events.length
+    if (grew) {
+      if (prevMax) setFlashAfterTs(prevMax)
+      if (flashTimer.current) clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => setFlashAfterTs(null), 2500)
+      if (live && listRef.current) {
+        requestAnimationFrame(() => {
+          listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+        })
+      }
+    }
+  }, [model.events.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div>
       <h3>消息时间轴（真实时间戳）</h3>
@@ -160,7 +181,7 @@ export default function TimelineView({ model }: { model: TimelineModel }) {
       {/* 列表 + 右侧详情面板 */}
       <div className="wf-layout">
         <div className="wf-list">
-          <div className="wf-scroll">
+          <div className="wf-scroll" ref={listRef} style={live ? { maxHeight: '70vh', overflowY: 'auto' } : undefined}>
             <table className="wf-table">
               <colgroup>
                 <col style={{ width: '44%' }} />
@@ -197,7 +218,7 @@ export default function TimelineView({ model }: { model: TimelineModel }) {
                         </tr>
                       )}
                       <tr
-                        className={`wf-row ${selected === i ? 'wf-row-selected' : ''} ${e.kind === 'user' ? 'wf-row-turn' : ''}`}
+                        className={`wf-row ${selected === i ? 'wf-row-selected' : ''} ${e.kind === 'user' ? 'wf-row-turn' : ''} ${flashAfterTs !== null && e.ts_ms > flashAfterTs ? 'wf-row-live' : ''}`}
                         data-kind={e.kind}
                         data-depth={e.depth}
                         onClick={() => selectByIdx(i)}
