@@ -137,6 +137,13 @@ const LIVE_STATUS_LABEL: Record<string, string> = {
   error: '加载失败',
 }
 
+/// 会话下拉框的短标签：太长会撑破下拉框固有宽度，截断显示尾部
+/// （完整文件名已在横幅标题中展示）。
+function shortTraceLabel(path: string): string {
+  const rel = path.replace(/^.*\/projects\//, '')
+  return rel.length > 52 ? `…${rel.slice(-51)}` : rel
+}
+
 function LiveMonitor({ path: initialPath, onExit }: { path: string; onExit: () => void }) {
   const { rawEvents, result, status, paused, path, autoFollow, follow, followLatest, pause, resume } =
     useLiveStream(initialPath)
@@ -168,7 +175,7 @@ function LiveMonitor({ path: initialPath, onExit }: { path: string; onExit: () =
           <option value="__auto__">🔄 自动跟随最新会话</option>
           {recent.map((t) => (
             <option key={t.path} value={t.path}>
-              {t.path.replace(/^.*\/projects\//, '')}
+              {shortTraceLabel(t.path)}
             </option>
           ))}
         </select>

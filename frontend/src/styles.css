@@ -745,6 +745,7 @@ tbody tr:hover td { background: var(--surface-2); }
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   padding: 10px 14px;
   border: 1px solid #fecaca;
   border-radius: 10px;
@@ -767,7 +768,26 @@ tbody tr:hover td { background: var(--surface-2); }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
-.live-title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-title {
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 会话选择下拉框：限制弹性宽度，防止长选项把整行撑破 */
+.live-banner select.pill-input {
+  flex: 1 1 220px;
+  min-width: 120px;
+  max-width: 340px;
+  white-space: nowrap;
+}
+/* 横幅内按钮：保持自然宽度，禁止文字竖排 */
+.live-banner .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .wf-row-live { animation: live-flash 2.5s ease-out; }
 @keyframes live-flash {
   0% { background: #fef08a; }
