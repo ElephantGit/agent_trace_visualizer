@@ -788,6 +788,24 @@ tbody tr:hover td { background: var(--surface-2); }
   flex: 0 0 auto;
   white-space: nowrap;
 }
+
+/* ── 文件模式选择面板（主区域，替代原侧栏文件列表）────────── */
+
+.file-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.trace-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
 .wf-row-live { animation: live-flash 2.5s ease-out; }
 @keyframes live-flash {
   0% { background: #fef08a; }

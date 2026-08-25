@@ -128,7 +128,8 @@ console.log(`5c. opencode token trend OK (${ocTrendPoints} points, per-step cach
 
 // ── 6. Claude Code upload (transcript) ────────────────────────
 await page.goto(`${BASE}/claude-code`)
-await page.click('text=上传文件') // default mode is browse (~/.claude/projects)
+await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
+await page.click('text=上传文件')
 await page.setInputFiles('input[type=file]', `${FIX}/sample_claude_code_transcript.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
 await page.waitForSelector('.step-card', { timeout: 15000 })
@@ -272,6 +273,7 @@ const exclLines = [
 writeFileSync(`${OUT}/excludes_cache.jsonl`, exclLines.join('\n') + '\n')
 
 await page.goto(`${BASE}/claude-code`)
+await page.click('text=📁 文件模式')
 await page.click('text=上传文件')
 await page.setInputFiles('input[type=file]', `${OUT}/excludes_cache.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
@@ -351,13 +353,14 @@ wf(LIVE_FILE,
 )
 
 await page.goto(`${BASE}/claude-code`)
-await page.click('text=🔴 实时监控')
+// 默认即实时监控模式：进入页面自动定位最新会话（刚创建的 e2e 文件）
 await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.waitForSelector('.live-banner >> text=session.jsonl', { timeout: 15000 })
 await page.waitForSelector('.wf-row', { timeout: 15000 })
 const liveInitialRows = await page.locator('.wf-row').count()
 // 初始：1 用户 + 1 模型文本 + 1 工具(合并) = 3
 if (liveInitialRows !== 3) throw new Error(`live initial rows expected 3, got ${liveInitialRows}`)
-console.log(`14. live monitor entered (${liveInitialRows} initial rows)`)
+console.log(`14. live monitor entered by default (${liveInitialRows} initial rows)`)
 
 // 追加一个模型文本事件 → 行数增长且新行高亮（闪光仅持续 2.5s，
 // 两个条件放在同一个等待谓词里避免与闪光窗口赛跑）
@@ -382,11 +385,11 @@ await page.click('text=▶ 恢复')
 await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 5, null, { timeout: 10000 })
 console.log('14d. resume catches up OK (5 rows)')
 
-// 退出实时 → 回到常规页面
+// 退出实时 → 切换到文件模式（主区域显示文件选择面板）
 await page.click('text=退出实时')
-await page.waitForSelector('text=请选择一个 transcript 文件', { timeout: 10000 })
+await page.waitForSelector('text=扫描 ~/.claude/projects 下的 transcript JSONL', { timeout: 10000 })
 rmSync(LIVE_DIR, { recursive: true, force: true })
-console.log('14e. exit live OK + cleanup')
+console.log('14e. exit live -> file mode OK + cleanup')
 
 // ── 15. 实时监控自动跟随：新会话出现后自动切换监控目标 ──────────
 const FOLLOW_DIR = jn(hd(), '.claude/projects/e2e-live-follow')
@@ -403,8 +406,9 @@ wf(FOLLOW_A,
   liveLine('fo-a4', 'user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'fo-t1', content: 'ok' }] })
 )
 await page.goto(`${BASE}/claude-code`)
-await page.click('text=🔴 实时监控')
+// 默认即实时监控：自动定位刚创建的 session-a
 await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.waitForSelector('.live-banner >> text=session-a.jsonl', { timeout: 15000 })
 await page.waitForSelector('.wf-row', { timeout: 15000 })
 // B 出现且更新 → 自动跟随应切换到 B
 wf(FOLLOW_B,
