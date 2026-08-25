@@ -47,8 +47,15 @@ export const api = {
       `/api/embedded/${encodeURIComponent(sessionId)}?agent_type=${encodeURIComponent(agentType)}`,
     ),
 
-  traces: (root?: string) =>
-    request<TraceEntry[]>(`/api/traces${root ? `?root=${encodeURIComponent(root)}` : ''}`),
+  traces: (root?: string, agent?: 'claude_code' | 'opencode') =>
+    request<TraceEntry[]>(
+      `/api/traces?${[
+        root ? `root=${encodeURIComponent(root)}` : '',
+        agent === 'opencode' ? 'agent=opencode' : '',
+      ]
+        .filter(Boolean)
+        .join('&')}`,
+    ),
 
   subagent: (sessionId: string) =>
     request<ParseResult>(`/api/subagent/${encodeURIComponent(sessionId)}`, { method: 'POST' }),
@@ -91,6 +98,8 @@ export const api = {
 
   reactflow: () => request<unknown>('/api/workflow/reactflow'),
 
-  liveLatest: () =>
-    request<{ path: string; mtimeMs: number; active: boolean }>('/api/live/latest'),
+  liveLatest: (agent?: 'claude_code' | 'opencode') =>
+    request<{ path: string; mtimeMs: number; active: boolean }>(
+      `/api/live/latest${agent === 'opencode' ? '?agent=opencode' : ''}`,
+    ),
 }

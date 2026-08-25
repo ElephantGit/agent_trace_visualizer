@@ -29,11 +29,20 @@ const TABS = [
 export default function OpencodeBody({
   result,
   embedded = false,
+  live = false,
+  liveEvents,
+  initialTab,
 }: {
   result: ParseResult
   embedded?: boolean
+  /// 实时监控模式：时间轴自动滚动 + 新行高亮；各 tab 随节流刷新更新
+  live?: boolean
+  /// 实时模式下的即时事件流（SSE 毫秒级）；未提供时用 result.raw_events
+  liveEvents?: unknown[]
+  /// 初始选中的 tab（实时模式默认落在时间轴）
+  initialTab?: string
 }) {
-  const [tab, setTab] = useState('replay')
+  const [tab, setTab] = useState(initialTab ?? 'replay')
   const replay = useReplay('opencode', result.raw_events)
   const workflowTree = useWorkflowTree(result)
   const mermaid = useMermaid({
@@ -82,7 +91,9 @@ export default function OpencodeBody({
 
       {tab === 'tokens' && <TokensTab turns={turns} />}
 
-      {tab === 'timeline' && <OpencodeTimelineTab rawEvents={result.raw_events} />}
+      {tab === 'timeline' && (
+        <OpencodeTimelineTab rawEvents={liveEvents ?? result.raw_events} live={live} />
+      )}
 
       {tab === 'tools' && <ToolsTab result={result} />}
 
@@ -281,7 +292,7 @@ function SubagentTab({ result }: { result: ParseResult }) {
                     x: available.map((v) => String(v.sub.agentName ?? 'unnamed')),
                     y: available.map((v) => v.child!.result_info.total_output),
                     name: 'Output',
-                    marker: { color: '#34a853' },
+                    marker: { color: '#0a9e6a' },
                   },
                 ]}
                 layout={{ barmode: 'group', height: 320, margin: { t: 30, b: 0 } }}
@@ -359,9 +370,9 @@ function SubagentDetail({ view }: { view: SubagentView }) {
 
 // ── Timeline tab：与 Claude Code 同款三泳道时间轴 ─────────────
 
-function OpencodeTimelineTab({ rawEvents }: { rawEvents: unknown[] }) {
+function OpencodeTimelineTab({ rawEvents, live = false }: { rawEvents: unknown[]; live?: boolean }) {
   const model = useMemo(() => buildTimelineOpencode(rawEvents), [rawEvents])
-  return <TimelineView model={model} />
+  return <TimelineView model={model} live={live} />
 }
 
 // ── Token trend tab ───────────────────────────────────────────
@@ -402,7 +413,7 @@ function TokensTab({ turns }: { turns: ParseResult['turns'] }) {
       x: rows.map((r) => r.turn_no),
       y: rows.map((r) => r.output_tokens),
       name: 'Output',
-      line: { color: '#34a853', width: 2 },
+      line: { color: '#0a9e6a', width: 2 },
     },
   ]
   if (showCacheLines && hasCacheRead) {
@@ -453,7 +464,7 @@ function TokensTab({ turns }: { turns: ParseResult['turns'] }) {
       <Plot
         data={[
           { type: 'bar', x: rows.map((r) => r.turn_no), y: rows.map((r) => r.input_delta), name: 'Input 增量', marker: { color: '#1a73e8' } },
-          { type: 'bar', x: rows.map((r) => r.turn_no), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#34a853' } },
+          { type: 'bar', x: rows.map((r) => r.turn_no), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#0a9e6a' } },
         ]}
         layout={{ barmode: 'group', height: 300, margin: { t: 10, b: 40 }, xaxis: { title: 'Step' }, yaxis: { title: 'Tokens' } }}
       />

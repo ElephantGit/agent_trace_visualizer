@@ -4,9 +4,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useLiveStream, useParse, useTraces } from '../../hooks'
-import { buildTimeline } from '../../derive'
+import { useParse, useTraces } from '../../hooks'
 import { api } from '../../api/client'
+import LiveMonitor, { shortTraceLabel } from '../../components/LiveMonitor'
 import { FileUpload, ErrorBanner, Info, Pills } from '../../components/ui/primitives'
 import type { AgentType, ParseResult, TraceEntry } from '../../api/types'
 import ClaudeBody from './ClaudeBody'
@@ -105,7 +105,7 @@ export default function ClaudeCodeView() {
       <div className="main" id="main">
         {pageMode === 'live' ? (
           livePath ? (
-            <LiveMonitor path={livePath} onExit={enterFile} />
+            <LiveMonitor path={livePath} agent="claude_code" onExit={enterFile} />
           ) : liveError ? (
             <div>
               <Info>未找到正在进行的会话（~/.claude/projects 下没有最近活跃的 transcript）。</Info>
@@ -180,74 +180,4 @@ export default function ClaudeCodeView() {
   )
 }
 
-// ── 实时监控视图 ─────────────────────────────────────────────
-
-const LIVE_STATUS_LABEL: Record<string, string> = {
-  loading: '加载中…',
-  live: 'SSE 实时',
-  polling: '轮询降级',
-  error: '加载失败',
-}
-
-/// 会话下拉框的短标签：太长会撑破下拉框固有宽度，截断显示尾部
-/// （完整文件名已在横幅标题中展示）。
-function shortTraceLabel(path: string): string {
-  const rel = path.replace(/^.*\/projects\//, '')
-  return rel.length > 52 ? `…${rel.slice(-51)}` : rel
-}
-
-function LiveMonitor({ path: initialPath, onExit }: { path: string; onExit: () => void }) {
-  const { rawEvents, result, status, paused, path, autoFollow, follow, followLatest, pause, resume } =
-    useLiveStream(initialPath)
-  const model = useMemo(() => buildTimeline(rawEvents), [rawEvents])
-  const traces = useTraces(undefined)
-  const recent = useMemo(
-    () => [...(traces.data ?? [])].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 10),
-    [traces.data],
-  )
-
-  return (
-    <div>
-      <div className="live-banner">
-        <span className="live-dot" />
-        <span className="live-title">
-          LIVE · {path?.split('/').pop()} · {model.events.length} 个事件 ·{' '}
-          {LIVE_STATUS_LABEL[status] ?? status}
-          {paused ? ' · 已暂停' : ''}
-        </span>
-        <select
-          className="pill-input"
-          value={autoFollow ? '__auto__' : (path ?? '__auto__')}
-          onChange={(e) => {
-            const v = e.target.value
-            if (v === '__auto__') followLatest()
-            else follow(v)
-          }}
-        >
-          <option value="__auto__">🔄 自动跟随最新会话</option>
-          {recent.map((t) => (
-            <option key={t.path} value={t.path}>
-              {shortTraceLabel(t.path)}
-            </option>
-          ))}
-        </select>
-        <button className="btn" onClick={paused ? resume : pause}>
-          {paused ? '▶ 恢复' : '⏸ 暂停'}
-        </button>
-        <button className="btn" onClick={onExit}>
-          退出实时
-        </button>
-      </div>
-      <p className="muted" style={{ margin: '6px 0' }}>
-        {autoFollow
-          ? '自动跟随中：监控最新的活跃会话；当其他会话更活跃时自动切换（当前会话 10s 无新事件时触发）。也可在上方手动固定某个会话。'
-          : '已固定监控上方选中的会话；可切回「🔄 自动跟随最新会话」。'}
-      </p>
-      {status === 'loading' && <p className="muted">正在加载会话内容…</p>}
-      {status === 'error' && <p className="muted">会话加载失败，请检查文件是否存在。</p>}
-      {result && (
-        <ClaudeBody result={result} live={!paused} liveEvents={rawEvents} initialTab="timeline" />
-      )}
-    </div>
-  )
-}
+// ── 实时监控视图（共享组件：components/LiveMonitor.tsx）─────

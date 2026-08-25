@@ -9,8 +9,11 @@ use crate::api::errors::ApiError;
 
 #[derive(Deserialize)]
 pub struct TracesQuery {
-    /// Root directory to scan; defaults to ~/.claude/projects.
+    /// Root directory to scan; defaults by agent（~/.claude/projects 或
+    /// ~/.local/share/opencode/trace）。
     pub root: Option<String>,
+    /// claude_code（默认）| opencode——决定默认根目录与扩展名过滤。
+    pub agent: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -27,14 +30,26 @@ fn default_root() -> std::path::PathBuf {
     std::path::PathBuf::from(home).join(".claude/projects")
 }
 
-/// GET /api/traces?root= — rglob *.jsonl, mtime-descending.
+fn opencode_root() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    std::path::PathBuf::from(home).join(".local/share/opencode/trace")
+}
+
+/// GET /api/traces?root=&agent= — rglob *.jsonl/*.ndjson, mtime-descending.
 pub async fn traces_handler(
     Query(q): Query<TracesQuery>,
 ) -> Result<Json<Vec<TraceEntry>>, ApiError> {
+    let is_opencode = q.agent.as_deref() == Some("opencode");
     let root = q
         .root
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(default_root);
+        .unwrap_or_else(|| {
+            if is_opencode {
+                opencode_root()
+            } else {
+                default_root()
+            }
+        });
     if !root.is_dir() {
         return Ok(Json(Vec::new()));
     }
@@ -49,7 +64,8 @@ pub async fn traces_handler(
             continue;
         }
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "jsonl" && ext != "ndjson" {
             continue;
         }
         let meta = match entry.metadata() {

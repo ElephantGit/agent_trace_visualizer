@@ -46,6 +46,8 @@ console.log('1. landing OK')
 // ── 2. Opencode standalone: upload → parse → tabs ─────────────
 await page.click('text=Opencode 可视化')
 await page.waitForURL('**/opencode')
+await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
+await page.click('text=上传文件') // 文件面板默认是会话记录列表，切到上传
 await page.setInputFiles('input[type=file]', `${FIX}/sample_opencode.ndjson`)
 await page.waitForSelector('text=会话回放', { timeout: 15000 })
 await page.waitForSelector('.step-card', { timeout: 15000 })
@@ -53,8 +55,10 @@ const stepCount = await page.locator('.step-card').count()
 console.log(`2. opencode upload OK (${stepCount} replay cards)`)
 await page.screenshot({ path: `${OUT}/2-opencode-replay.png`, fullPage: true })
 
-// overview tab + mermaid
+// overview tab + mermaid（时序图按 IntersectionObserver 懒渲染，
+// 文件面板使该区域落到视口外——先滚动到可见再等待 SVG）
 await page.click('text=总览')
+await page.locator('.mermaid-out').scrollIntoViewIfNeeded()
 await page.waitForSelector('.mermaid-out svg', { timeout: 20000 })
 console.log('3. overview + mermaid svg OK')
 await page.screenshot({ path: `${OUT}/3-opencode-overview.png`, fullPage: true })
@@ -422,6 +426,41 @@ await page.waitForFunction(
 )
 console.log('15. live auto-follow switched to newest session OK')
 rmSync(FOLLOW_DIR, { recursive: true, force: true })
+
+// ── 16. Opencode 实时监控（默认实时模式 + SSE 增量 + 模式切换）──
+const OC_LIVE_FILE = jn(hd(), '.local/share/opencode/trace/ses_e2e_live.ndjson')
+rmSync(OC_LIVE_FILE, { force: true })
+const ocLine = (obj) => JSON.stringify(obj) + '\n'
+const ocTs = Date.now()
+wf(OC_LIVE_FILE,
+  ocLine({ type: 'session.start', ts: ocTs, model: 'm2', sessionID: 'ses_e2e_live', title: 'e2e live' }) +
+  ocLine({ type: 'step.start', ts: ocTs + 100, globalStep: 1 }) +
+  ocLine({ type: 'text.assistant', ts: ocTs + 200, globalStep: 1, text: 'opencode live reply' }) +
+  ocLine({ type: 'tool.start', ts: ocTs + 300, globalStep: 1, toolCallId: 'oc-t1', tool: 'bash', args: { command: 'ls' } }) +
+  ocLine({ type: 'tool.finish', ts: ocTs + 400, globalStep: 1, toolCallId: 'oc-t1', duration: 100 }) +
+  ocLine({ type: 'step.finish', ts: ocTs + 500, globalStep: 1, cumTokens: { input: 50, output: 10 }, tokens: {}, reason: 'end_turn' })
+)
+await page.goto(`${BASE}/opencode`)
+// 默认即实时监控：自动定位刚创建的 ses_e2e_live.ndjson
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.waitForSelector('.live-banner >> text=ses_e2e_live.ndjson', { timeout: 15000 })
+await page.waitForSelector('.wf-row', { timeout: 15000 })
+const ocLiveInitial = await page.locator('.wf-row').count()
+// 初始：1 模型文本 + 1 工具(合并) = 2
+if (ocLiveInitial !== 2) throw new Error(`opencode live initial rows expected 2, got ${ocLiveInitial}`)
+console.log(`16. opencode live monitor entered by default (${ocLiveInitial} rows)`)
+// 追加模型文本 → 行数增长
+appendFileSync(OC_LIVE_FILE, ocLine({ type: 'text.assistant', ts: ocTs + 600, globalStep: 2, text: 'opencode live streaming' }))
+await page.waitForFunction((n) => document.querySelectorAll('.wf-row').length === n + 1, ocLiveInitial, { timeout: 10000 })
+console.log('16b. opencode live append grows rows OK')
+// 退出实时 → 文件模式面板
+await page.click('text=退出实时')
+await page.waitForSelector('text=扫描 ~/.local/share/opencode/trace 下的 ndjson', { timeout: 10000 })
+// 切回实时模式
+await page.click('text=🔴 实时监控模式')
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+console.log('16c. opencode live/file mode toggle OK')
+rmSync(OC_LIVE_FILE, { force: true })
 
 await browser.close()
 
