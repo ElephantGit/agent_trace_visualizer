@@ -360,6 +360,9 @@ await page.goto(`${BASE}/claude-code`)
 // 默认即实时监控模式：进入页面自动定位最新会话（刚创建的 e2e 文件）
 await page.waitForSelector('.live-banner', { timeout: 15000 })
 await page.waitForSelector('.live-banner >> text=session.jsonl', { timeout: 15000 })
+// 会话下拉框展示可读会话名（首个用户输入；option 在下拉框关闭时
+// 不算可见元素，用 attached 断言）
+await page.waitForSelector('.live-banner option >> text=live hello', { state: 'attached', timeout: 15000 })
 await page.waitForSelector('.wf-row', { timeout: 15000 })
 const liveInitialRows = await page.locator('.wf-row').count()
 // 初始：1 用户 + 1 模型文本 + 1 工具(合并) = 3
@@ -444,6 +447,8 @@ await page.goto(`${BASE}/opencode`)
 // 默认即实时监控：自动定位刚创建的 ses_e2e_live.ndjson
 await page.waitForSelector('.live-banner', { timeout: 15000 })
 await page.waitForSelector('.live-banner >> text=ses_e2e_live.ndjson', { timeout: 15000 })
+// 会话下拉框展示 session.start 的 title
+await page.waitForSelector('.live-banner option >> text=e2e live', { state: 'attached', timeout: 15000 })
 await page.waitForSelector('.wf-row', { timeout: 15000 })
 const ocLiveInitial = await page.locator('.wf-row').count()
 // 初始：1 模型文本 + 1 工具(合并) = 2

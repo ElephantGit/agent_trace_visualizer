@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useParse, useTraces } from '../../hooks'
 import { api } from '../../api/client'
-import LiveMonitor, { shortTraceLabel } from '../../components/LiveMonitor'
+import LiveMonitor from '../../components/LiveMonitor'
+import TraceLabel from '../../components/TraceLabel'
 import { FileUpload, ErrorBanner, Info, Pills } from '../../components/ui/primitives'
 import type { AgentType, ParseResult, TraceEntry } from '../../api/types'
 import OpencodeBody from './OpencodeBody'
@@ -145,7 +146,7 @@ export default function OpencodeView() {
                         title={t.path}
                         onClick={() => setSelectedPath(t.path)}
                       >
-                        {shortTraceLabel(t.path)}
+                        <TraceLabel path={t.path} agent="opencode" />
                       </button>
                     ))}
                   </div>

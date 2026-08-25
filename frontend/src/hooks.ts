@@ -309,6 +309,16 @@ export function useTraces(root: string | undefined, agent?: 'claude_code' | 'ope
   })
 }
 
+/// 单个 trace 文件的可读会话名（文件列表/会话下拉框展示用）。
+export function useTraceName(path: string | null, agent?: 'claude_code' | 'opencode') {
+  return useQuery({
+    queryKey: ['trace-name', path ?? '', agent ?? ''],
+    queryFn: () => api.traceName(path!, agent),
+    enabled: !!path,
+    staleTime: 5 * 60_000,
+  })
+}
+
 export function useSubagent(sessionId: string | null) {
   return useQuery({
     queryKey: ['subagent', sessionId],

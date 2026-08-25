@@ -38,7 +38,7 @@ fn opencode_trace_root() -> PathBuf {
 /// path 必须落在允许的 trace 目录下且扩展名匹配（信任边界）：
 /// - Claude Code：~/.claude/projects 下的 *.jsonl
 /// - Opencode：~/.local/share/opencode/trace 下的 *.ndjson
-fn allowed_live_path(path: &str) -> bool {
+pub(crate) fn allowed_live_path(path: &str) -> bool {
     let Ok(p) = std::fs::canonicalize(path) else {
         return false;
     };

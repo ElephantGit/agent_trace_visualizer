@@ -7,19 +7,13 @@ import { useLiveStream, useTraces, type LiveAgent } from '../hooks'
 import { buildTimeline, buildTimelineOpencode } from '../derive'
 import ClaudeBody from '../pages/claude/ClaudeBody'
 import OpencodeBody from '../pages/opencode/OpencodeBody'
+import TraceLabel from './TraceLabel'
 
 const LIVE_STATUS_LABEL: Record<string, string> = {
   loading: '加载中…',
   live: 'SSE 实时',
   polling: '轮询降级',
   error: '加载失败',
-}
-
-/// 会话下拉框的短标签：太长会撑破下拉框固有宽度，截断显示尾部
-/// （完整文件名已在横幅标题中展示）。
-export function shortTraceLabel(path: string): string {
-  const rel = path.replace(/^.*\/projects\//, '')
-  return rel.length > 52 ? `…${rel.slice(-51)}` : rel
 }
 
 export default function LiveMonitor({
@@ -72,7 +66,7 @@ export default function LiveMonitor({
           <option value="__auto__">🔄 自动跟随最新会话</option>
           {recent.map((t) => (
             <option key={t.path} value={t.path}>
-              {shortTraceLabel(t.path)}
+              <TraceLabel path={t.path} agent={agent} />
             </option>
           ))}
         </select>

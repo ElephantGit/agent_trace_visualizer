@@ -30,6 +30,7 @@ pub fn router() -> Router {
             get(embedded::embedded_handler),
         )
         .route("/api/traces", get(traces::traces_handler))
+        .route("/api/trace-name", get(traces::trace_name_handler))
         .route("/api/live", get(live::live_handler))
         .route("/api/live/latest", get(live::live_latest_handler))
         .route("/api/subagent/{session_id}", post(parse::subagent_handler))

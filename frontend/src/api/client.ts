@@ -98,6 +98,11 @@ export const api = {
 
   reactflow: () => request<unknown>('/api/workflow/reactflow'),
 
+  traceName: (path: string, agent?: 'claude_code' | 'opencode') =>
+    request<{ name: string | null }>(
+      `/api/trace-name?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
+    ),
+
   liveLatest: (agent?: 'claude_code' | 'opencode') =>
     request<{ path: string; mtimeMs: number; active: boolean }>(
       `/api/live/latest${agent === 'opencode' ? '?agent=opencode' : ''}`,
