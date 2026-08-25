@@ -92,7 +92,7 @@ export default function CompareView() {
         {errB && <ErrorBanner>{String(errB)}</ErrorBanner>}
       </aside>
 
-      <div className="main">
+      <div className="main" id="main">
         {!resultA || !resultB ? (
           <Placeholder />
         ) : compare.isLoading ? (
@@ -156,7 +156,7 @@ function CompareBody({
 
       <hr />
       <h3>📋 总览对比</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+      <div className="summary-grid">
         {payload.summaryCards.map((card) => (
           <MetricCard key={card.title} card={card} labelA={labels.a} labelB={labels.b} />
         ))}
@@ -329,7 +329,7 @@ function MetricCard({ card, labelA, labelB }: { card: SummaryCard; labelA: strin
           <div className="m-label" style={{ color: COLOR_BASELINE }}>{labelA}</div>
           <div className="m-value" style={{ color: COLOR_BASELINE }}>{card.str_a}</div>
         </div>
-        <div style={{ fontSize: 16, color: '#ccc' }}>vs</div>
+        <div style={{ fontSize: 16, color: 'var(--faint)' }}>vs</div>
         <div>
           <div className="m-label" style={{ color: COLOR_RTK }}>{labelB}</div>
           <div className="m-value" style={{ color: COLOR_RTK }}>{card.str_b}</div>

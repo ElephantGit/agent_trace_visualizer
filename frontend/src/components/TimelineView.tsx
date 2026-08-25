@@ -12,7 +12,7 @@ import { DataTable, DebugJson, Info } from './ui/primitives'
 const KIND_COLORS: Record<string, string> = {
   user: '#64748b',
   llm: '#1a73e8',
-  tool: '#34a853',
+  tool: '#0a9e6a',
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -98,7 +98,7 @@ export default function TimelineView({ model, live = false }: { model: TimelineM
   }
 
   const barColor = (e: TimelineEvent) => {
-    if (e.kind === 'tool') return toolColors.get(e.tool_name) ?? '#34a853'
+    if (e.kind === 'tool') return toolColors.get(e.tool_name) ?? '#0a9e6a'
     return KIND_COLORS[e.kind] ?? '#94a3b8'
   }
 
@@ -355,7 +355,7 @@ function TimelineStrip({
                       width: e.duration_ms
                         ? `${Math.max(durPct(e.duration_ms), 0.15)}%`
                         : '3px',
-                      background: e.kind === 'tool' ? toolColors.get(e.tool_name) ?? '#34a853' : KIND_COLORS[e.kind],
+                      background: e.kind === 'tool' ? toolColors.get(e.tool_name) ?? '#0a9e6a' : KIND_COLORS[e.kind],
                       border: e.is_error ? '1px solid #ef4444' : undefined,
                     }}
                     title={`${e.name}${e.duration_ms !== null ? ` · ${formatDuration(e.duration_ms)}` : ''}`}

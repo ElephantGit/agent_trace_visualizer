@@ -22,9 +22,9 @@ export function agentIcon(name: string): string {
 }
 
 const STATE_COLORS: Record<string, { bg: string; border: string; text: string; icon: string; label: string }> = {
-  completed: { bg: '#f0fdf4', border: '#22c55e', text: '#166534', icon: '✅', label: '已完成' },
-  failed: { bg: '#fef2f2', border: '#f87171', text: '#991b1b', icon: '❌', label: '失败' },
-  error: { bg: '#fef2f2', border: '#f87171', text: '#991b1b', icon: '❌', label: '出错' },
+  completed: { bg: '#f0fdf4', border: '#0a9e6a', text: '#166534', icon: '✅', label: '已完成' },
+  failed: { bg: '#fef2f2', border: '#ea4335', text: '#991b1b', icon: '❌', label: '失败' },
+  error: { bg: '#fef2f2', border: '#ea4335', text: '#991b1b', icon: '❌', label: '出错' },
   running: { bg: '#fffbeb', border: '#fbbf24', text: '#92400e', icon: '⏳', label: '进行中' },
   unknown: { bg: '#f8fafc', border: '#94a3b8', text: '#475569', icon: '❓', label: '未知' },
 }
