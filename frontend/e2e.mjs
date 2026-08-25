@@ -336,6 +336,14 @@ await page.goto(`${BASE}/opencode`)
 await page.waitForSelector('text=Opencode')
 console.log('13. SPA fallback route OK')
 
+// ── 13b. Agent 切换器（各可视化页面左下角固定）──────────────────
+await page.click('.agent-switcher a[href="/gemini"]')
+await page.waitForURL('**/gemini')
+await page.waitForSelector('.agent-switcher .agent-switch-active >> text=Gemini', { timeout: 10000 })
+await page.click('.agent-switcher a[href="/opencode"]')
+await page.waitForURL('**/opencode')
+console.log('13b. agent switcher (bottom-left) OK')
+
 // ── 14. 实时监控（SSE 推送 + 暂停/恢复 + 退出）────────────────
 import { appendFileSync, rmSync, writeFileSync as wf } from 'node:fs'
 import { homedir as hd } from 'node:os'

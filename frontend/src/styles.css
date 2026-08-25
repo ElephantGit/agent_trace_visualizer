@@ -815,6 +815,41 @@ tbody tr:hover td { background: var(--surface-2); }
   overflow-y: auto;
   margin-top: 8px;
 }
+
+/* ── Agent 切换器（各页面左下角固定）────────────────────────── */
+
+.agent-switcher {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
+}
+.agent-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 0.82em;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.agent-switch-btn:hover { background: var(--surface-2); color: var(--text); }
+.agent-switch-active {
+  background: var(--accent-soft);
+  border-color: #c6dafc;
+  color: var(--accent-strong);
+  font-weight: 600;
+}
 .wf-row-live { animation: live-flash 2.5s ease-out; }
 @keyframes live-flash {
   0% { background: #fef08a; }

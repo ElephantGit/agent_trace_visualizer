@@ -8,6 +8,7 @@ import { useParse, useTraces } from '../../hooks'
 import { api } from '../../api/client'
 import LiveMonitor from '../../components/LiveMonitor'
 import TraceLabel from '../../components/TraceLabel'
+import AgentSwitcher from '../../components/AgentSwitcher'
 import { FileUpload, ErrorBanner, Info, Pills } from '../../components/ui/primitives'
 import type { AgentType, ParseResult, TraceEntry } from '../../api/types'
 import ClaudeBody from './ClaudeBody'
@@ -177,6 +178,7 @@ export default function ClaudeCodeView() {
           </>
         )}
       </div>
+      <AgentSwitcher />
     </div>
   )
 }

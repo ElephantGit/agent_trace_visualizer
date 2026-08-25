@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ParseResult } from '../../api/types'
 import { useMermaid, useParse } from '../../hooks'
+import AgentSwitcher from '../../components/AgentSwitcher'
 import Plot from '../../components/Plot'
 import MermaidView from '../../components/MermaidView'
 import { Tabs, DataTable, DebugJson, Expander, ErrorBanner, FileUpload, Info } from '../../components/ui/primitives'
@@ -78,6 +79,7 @@ export default function GeminiView() {
         {data && <GeminiBody result={data as ParseResult} />}
         {!content && <p className="muted">请先上传 telemetry.log。</p>}
       </div>
+      <AgentSwitcher />
     </div>
   )
 }
