@@ -841,6 +841,38 @@ tbody tr:hover td { background: var(--surface-2); }
   margin-top: 8px;
 }
 
+/* ── 会话列表表格（文件模式）────────────────────────────────── */
+
+.session-table { table-layout: fixed; }
+.session-table th:nth-child(1) { width: 30%; }
+.session-table th:nth-child(2) { width: 9%; }
+.session-table th:nth-child(3) { width: 15%; }
+.session-table th:nth-child(4) { width: 11%; }
+.session-table th:nth-child(5) { width: 9%; }
+.session-table th:nth-child(6) { width: 26%; }
+.session-row { cursor: pointer; }
+.session-row:hover td { background: var(--surface-2); }
+.session-row-selected td {
+  background: var(--accent-soft);
+  font-weight: 500;
+}
+.session-name { font-weight: 500; }
+.session-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.session-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0; /* table-layout: fixed 下配合溢出省略 */
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.session-live-badge {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border: 1px solid var(--ok-border);
+  white-space: nowrap;
+}
+
 /* ── Agent 切换器（各页面左下角固定）────────────────────────── */
 
 .agent-switcher {

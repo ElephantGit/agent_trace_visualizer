@@ -319,6 +319,16 @@ export function useTraceName(path: string | null, agent?: 'claude_code' | 'openc
   })
 }
 
+/// 单个 trace 文件的会话列表元数据（状态/时长/agent 数/目录）。
+export function useSessionMeta(path: string | null, agent?: 'claude_code' | 'opencode') {
+  return useQuery({
+    queryKey: ['session-meta', path ?? '', agent ?? ''],
+    queryFn: () => api.sessionMeta(path!, agent),
+    enabled: !!path,
+    staleTime: 30_000, // 状态（进行中/已结束）需要较新鲜的数据
+  })
+}
+
 export function useSubagent(sessionId: string | null) {
   return useQuery({
     queryKey: ['subagent', sessionId],

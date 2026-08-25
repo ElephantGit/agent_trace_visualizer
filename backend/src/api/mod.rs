@@ -31,6 +31,7 @@ pub fn router() -> Router {
         )
         .route("/api/traces", get(traces::traces_handler))
         .route("/api/trace-name", get(traces::trace_name_handler))
+        .route("/api/session-meta", get(traces::session_meta_handler))
         .route("/api/live", get(live::live_handler))
         .route("/api/live/latest", get(live::live_latest_handler))
         .route("/api/subagent/{session_id}", post(parse::subagent_handler))

@@ -7,9 +7,9 @@ import { Link } from 'react-router-dom'
 import { useParse, useTraces } from '../../hooks'
 import { api } from '../../api/client'
 import LiveMonitor from '../../components/LiveMonitor'
-import TraceLabel from '../../components/TraceLabel'
+import SessionTable from '../../components/SessionTable'
 import AgentSwitcher from '../../components/AgentSwitcher'
-import { FileUpload, ErrorBanner, Info, Pills } from '../../components/ui/primitives'
+import { FileUpload, ErrorBanner, Info } from '../../components/ui/primitives'
 import type { AgentType, ParseResult, TraceEntry } from '../../api/types'
 import ClaudeBody from './ClaudeBody'
 import { useQuery } from '@tanstack/react-query'
@@ -121,41 +121,30 @@ export default function ClaudeCodeView() {
           )
         ) : (
           <>
-            {/* 文件选择面板（主区域，不再占用左侧栏） */}
+            {/* 会话列表面板（主区域）：点击行加载该会话详情 */}
             <div className="file-panel">
-              <Pills
-                options={['交互会话记录', '上传文件']}
-                selected={[loadMode === 'browse' ? '交互会话记录' : '上传文件']}
-                onChange={(next) => {
-                  setLoadMode(next[0] === '上传文件' ? 'upload' : 'browse')
-                }}
-              />
-              {loadMode === 'browse' ? (
-                <div>
-                  <p className="muted">扫描 ~/.claude/projects 下的 transcript JSONL（按修改时间倒序）</p>
-                  {traces.isLoading && <p className="muted">扫描中…</p>}
-                  {sorted.length === 0 && !traces.isLoading && (
-                    <Info>未找到 transcript 文件。</Info>
-                  )}
-                  <div className="trace-grid">
-                    {sorted.slice(0, 200).map((t: TraceEntry) => (
-                      <button
-                        key={t.path}
-                        className={`btn trace-btn ${t.path === selectedPath ? 'btn-primary' : ''}`}
-                        title={t.path}
-                        onClick={() => setSelectedPath(t.path)}
-                      >
-                        <TraceLabel path={t.path} agent="claude_code" />
-                      </button>
-                    ))}
-                  </div>
-                  {sorted.length > 200 && <p className="muted">… 仅显示前 200 个</p>}
-                </div>
-              ) : (
+              <p className="muted">扫描 ~/.claude/projects 下的 transcript JSONL（按修改时间倒序）</p>
+              {traces.isLoading && <p className="muted">扫描中…</p>}
+              {!traces.isLoading && (
+                <SessionTable
+                  agent="claude_code"
+                  traces={sorted.slice(0, 200)}
+                  selected={selectedPath}
+                  onSelect={(p) => {
+                    setLoadMode('browse')
+                    setSelectedPath(p)
+                  }}
+                />
+              )}
+              {sorted.length > 200 && <p className="muted">… 仅显示前 200 个</p>}
+
+              <details className="step-fold" style={{ marginTop: 12 }}>
+                <summary className="step-fold-summary">📤 上传文件分析</summary>
                 <div>
                   <FileUpload
                     label="上传 stream-json 或 transcript JSONL"
                     onFile={(buf, n) => {
+                      setLoadMode('upload')
                       setContent(buf)
                       setName(n)
                     }}
@@ -166,13 +155,13 @@ export default function ClaudeCodeView() {
                   </p>
                   <pre className="debug-json">{'claude --output-format stream-json \\\n  -p "你的任务描述" \\\n  > claude_trace.ndjson'}</pre>
                 </div>
-              )}
+              </details>
             </div>
             {isLoading && <p className="muted">解析中…</p>}
             {result && <ClaudeBody result={result} />}
             {!result && !isLoading && (
               <p className="muted">
-                {loadMode === 'browse' ? '请选择一个 transcript 文件。' : '请先上传一个 trace 文件。'}
+                {loadMode === 'browse' ? '点击上方会话列表中的某一行查看详细信息。' : '请先上传一个 trace 文件。'}
               </p>
             )}
           </>

@@ -95,6 +95,18 @@ export const api = {
       `/api/trace-name?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
     ),
 
+  sessionMeta: (path: string, agent?: 'claude_code' | 'opencode') =>
+    request<{
+      name: string | null
+      active: boolean
+      lastActiveMs: number
+      durationMs: number | null
+      agentCount: number
+      directory: string | null
+    }>(
+      `/api/session-meta?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
+    ),
+
   liveLatest: (agent?: 'claude_code' | 'opencode') =>
     request<{ path: string; mtimeMs: number; active: boolean }>(
       `/api/live/latest${agent === 'opencode' ? '?agent=opencode' : ''}`,

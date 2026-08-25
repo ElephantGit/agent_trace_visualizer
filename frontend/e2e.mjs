@@ -47,7 +47,7 @@ console.log('1. landing OK')
 await page.click('text=Opencode 可视化')
 await page.waitForURL('**/opencode')
 await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
-await page.click('text=上传文件') // 文件面板默认是会话记录列表，切到上传
+await page.click('text=📤 上传文件分析') // 展开上传区域
 await page.setInputFiles('input[type=file]', `${FIX}/sample_opencode.ndjson`)
 await page.waitForSelector('text=会话回放', { timeout: 15000 })
 await page.waitForSelector('.step-card', { timeout: 15000 })
@@ -133,7 +133,7 @@ console.log(`5c. opencode token trend OK (${ocTrendPoints} points, per-step cach
 // ── 6. Claude Code upload (transcript) ────────────────────────
 await page.goto(`${BASE}/claude-code`)
 await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
-await page.click('text=上传文件')
+await page.click('text=📤 上传文件分析')
 await page.setInputFiles('input[type=file]', `${FIX}/sample_claude_code_transcript.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
 await page.waitForSelector('.step-card', { timeout: 15000 })
@@ -278,7 +278,7 @@ writeFileSync(`${OUT}/excludes_cache.jsonl`, exclLines.join('\n') + '\n')
 
 await page.goto(`${BASE}/claude-code`)
 await page.click('text=📁 文件模式')
-await page.click('text=上传文件')
+await page.click('text=📤 上传文件分析')
 await page.setInputFiles('input[type=file]', `${OUT}/excludes_cache.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
 await page.click('text=Token 趋势')
@@ -400,11 +400,16 @@ await page.click('text=▶ 恢复')
 await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 5, null, { timeout: 10000 })
 console.log('14d. resume catches up OK (5 rows)')
 
-// 退出实时 → 切换到文件模式（主区域显示文件选择面板）
+// 退出实时 → 切换到文件模式（主区域显示会话列表表格）
 await page.click('text=退出实时')
 await page.waitForSelector('text=扫描 ~/.claude/projects 下的 transcript JSONL', { timeout: 10000 })
+await page.waitForSelector('.session-table', { timeout: 10000 })
+// 表格列头齐全（会话/状态/最后活跃时间/持续时间/Agent 数量/目录）
+for (const col of ['会话', '状态', '最后活跃时间', '持续时间', 'Agent 数量', '目录']) {
+  await page.waitForSelector(`.session-table th >> text=${col}`, { timeout: 10000 })
+}
 rmSync(LIVE_DIR, { recursive: true, force: true })
-console.log('14e. exit live -> file mode OK + cleanup')
+console.log('14e. exit live -> session table OK + cleanup')
 
 // ── 15. 实时监控自动跟随：新会话出现后自动切换监控目标 ──────────
 const FOLLOW_DIR = jn(hd(), '.claude/projects/e2e-live-follow')

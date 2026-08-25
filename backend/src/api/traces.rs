@@ -215,6 +215,233 @@ pub async fn trace_name_handler(
     Ok(Json(TraceName { name }))
 }
 
+// ── 会话列表元数据（文件模式表格列）───────────────────────────
+
+/// 5 分钟内活跃视为"进行中"（与 /api/live/latest 一致）。
+const ACTIVE_WINDOW_MS: u64 = 5 * 60 * 1000;
+
+/// 与 claude parser 的 SUBAGENT_NAMES 保持一致。
+const SUBAGENT_NAMES: [&str; 6] = ["task", "Task", "delegate", "subagent", "agent", "Agent"];
+
+/// 头部扫描上限：会话名/目录/agent 计数只在前 2MB 内统计
+/// （大文件里 agent 计数为近似值，列表场景足够）。
+const HEAD_SCAN_CAP: usize = 2 * 1024 * 1024;
+
+#[derive(Deserialize)]
+pub struct SessionMetaQuery {
+    pub path: String,
+    /// claude_code（默认）| opencode
+    pub agent: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SessionMeta {
+    pub name: Option<String>,
+    /// 5 分钟内有写入 → true（进行中）
+    pub active: bool,
+    #[serde(rename = "lastActiveMs")]
+    pub last_active_ms: u64,
+    #[serde(rename = "durationMs")]
+    pub duration_ms: Option<u64>,
+    /// 主 agent + 派发的 subagent 数
+    #[serde(rename = "agentCount")]
+    pub agent_count: u32,
+    /// 会话所在目录（cwd）
+    pub directory: Option<String>,
+}
+
+fn ts_of(v: &serde_json::Value) -> Option<u64> {
+    // opencode：ts 为毫秒数；claude：timestamp 为 ISO 字符串
+    if let Some(n) = v.get("ts").and_then(|t| t.as_u64()) {
+        return Some(n);
+    }
+    if let Some(s) = v.get("timestamp").and_then(|t| t.as_str()) {
+        if let Some(ms) = crate::util::parse_iso_epoch_ms(s) {
+            return Some(ms.max(0.0) as u64);
+        }
+    }
+    None
+}
+
+/// 从 assistant 消息的 content 块中数出 subagent 派发（claude）。
+fn count_claude_dispatch(v: &serde_json::Value) -> u32 {
+    let mut n = 0;
+    if let Some(blocks) = v
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        for b in blocks {
+            if b.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                continue;
+            }
+            if let Some(name) = b.get("name").and_then(|n| n.as_str()) {
+                if SUBAGENT_NAMES.contains(&name) {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
+struct SessionScan {
+    name: Option<String>,
+    directory: Option<String>,
+    first_ts_ms: Option<u64>,
+    agent_count: u32,
+}
+
+/// 单次头扫描提取会话名/cwd/首时间戳/subagent 派发数。
+fn scan_head(path: &Path, is_opencode: bool) -> SessionScan {
+    let mut out = SessionScan {
+        name: None,
+        directory: None,
+        first_ts_ms: None,
+        agent_count: 0,
+    };
+    let Ok(f) = std::fs::File::open(path) else {
+        return out;
+    };
+    let mut reader = std::io::BufReader::new(f);
+    let mut line = String::new();
+    let mut scanned = 0usize;
+    let mut oc_title: Option<String> = None;
+    while reader.read_line(&mut line).is_ok_and(|n| n > 0) && scanned < HEAD_SCAN_CAP {
+        scanned += line.len();
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            line.clear();
+            continue;
+        }
+        let parsed = serde_json::from_str::<serde_json::Value>(trimmed).ok();
+        line.clear();
+        let Some(v) = parsed else { continue };
+        if out.first_ts_ms.is_none() {
+            out.first_ts_ms = ts_of(&v);
+        }
+        if out.directory.is_none() {
+            if let Some(c) = v.get("cwd").and_then(|c| c.as_str()) {
+                if !c.trim().is_empty() {
+                    out.directory = Some(c.trim().to_string());
+                }
+            }
+        }
+        if is_opencode {
+            if v.get("type").and_then(|t| t.as_str()) == Some("session.start") {
+                oc_title = v
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+            }
+            if v.get("type").and_then(|t| t.as_str()) == Some("tool.start")
+                && v.get("tool").and_then(|t| t.as_str()) == Some("task")
+            {
+                out.agent_count += 1;
+            }
+        } else {
+            out.agent_count += count_claude_dispatch(&v);
+            if out.name.is_none() {
+                if v.get("type").and_then(|t| t.as_str()) == Some("user") {
+                    let msg = v.get("message").unwrap_or(&v);
+                    let content = msg.get("content").unwrap_or(&serde_json::Value::Null);
+                    if let Some(s) = content.as_str() {
+                        let s = s.trim();
+                        if !s.is_empty() {
+                            out.name = Some(truncate_name(s));
+                        }
+                    } else if let Some(blocks) = content.as_array() {
+                        for b in blocks {
+                            if b.get("type").and_then(|t| t.as_str()) != Some("text") {
+                                continue;
+                            }
+                            if let Some(s) = b.get("text").and_then(|t| t.as_str()) {
+                                let s = s.trim();
+                                if !s.is_empty() {
+                                    out.name = Some(truncate_name(s));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if is_opencode {
+        out.name = oc_title.or_else(|| {
+            // sessionID 兜底：从文件名取（ses_xxx.ndjson）
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(truncate_name)
+        });
+    }
+    if out.name.is_none() {
+        if let Some(dir) = &out.directory {
+            if let Some(base) = Path::new(dir).file_name().and_then(|b| b.to_str()) {
+                out.name = Some(truncate_name(base));
+            }
+        }
+    }
+    out
+}
+
+/// 尾扫描：最后 8KB 内最后一条带时间戳的事件。
+/// 注意用 lossy 解码——8KB 边界可能切在多字节 UTF-8 字符中间。
+fn scan_tail_ts(path: &Path) -> Option<u64> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return None;
+    };
+    let start = bytes.len().saturating_sub(8192);
+    let mut last: Option<u64> = None;
+    for line in String::from_utf8_lossy(&bytes[start..]).lines() {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) {
+            if let Some(ts) = ts_of(&v) {
+                last = Some(ts);
+            }
+        }
+    }
+    last
+}
+
+/// GET /api/session-meta?path=&agent= — 会话列表行的元数据。
+pub async fn session_meta_handler(
+    Query(q): Query<SessionMetaQuery>,
+) -> Result<Json<SessionMeta>, ApiError> {
+    if !crate::api::live::allowed_live_path(&q.path) {
+        return Err(ApiError::bad_request(
+            "仅允许提取 ~/.claude/projects 或 opencode trace 目录下文件的会话信息",
+        ));
+    }
+    let is_opencode = q.agent.as_deref() == Some("opencode");
+    let head = scan_head(Path::new(&q.path), is_opencode);
+    let last_ts = scan_tail_ts(Path::new(&q.path));
+    let duration_ms = match (head.first_ts_ms, last_ts) {
+        (Some(a), Some(b)) if b >= a => Some(b - a),
+        _ => None,
+    };
+    let mtime_ms = std::fs::metadata(&q.path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    Ok(Json(SessionMeta {
+        name: head.name,
+        active: now_ms.saturating_sub(mtime_ms) <= ACTIVE_WINDOW_MS,
+        last_active_ms: mtime_ms,
+        duration_ms,
+        agent_count: 1 + head.agent_count, // 主 agent + subagent
+        directory: head.directory,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,6 +451,57 @@ mod tests {
         p.push(format!("atv-trace-name-{}-{name}", std::process::id()));
         std::fs::write(&p, content).unwrap();
         p
+    }
+
+    #[test]
+    fn scan_head_claude_collects_all_fields() {
+        let p = write_temp(
+            "meta-claude",
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"你好\"},\"cwd\":\"/home/u/proj\",\"timestamp\":\"2026-01-01T10:00:00Z\",\"uuid\":\"a\"}\n\
+             {\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"task\",\"input\":{}},{\"type\":\"tool_use\",\"id\":\"t2\",\"name\":\"Bash\",\"input\":{}}]},\"timestamp\":\"2026-01-01T10:00:02Z\",\"uuid\":\"b\"}\n",
+        );
+        let s = scan_head(&p, false);
+        assert_eq!(s.name.as_deref(), Some("你好"));
+        assert_eq!(s.directory.as_deref(), Some("/home/u/proj"));
+        assert_eq!(s.agent_count, 1); // 只有 task 计入
+        assert!(s.first_ts_ms.is_some());
+        assert_eq!(scan_tail_ts(&p).unwrap(), s.first_ts_ms.unwrap() + 2000);
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn scan_head_opencode_title_and_task_count() {
+        let p = write_temp(
+            "meta-oc",
+            "{\"type\":\"session.start\",\"ts\":1000,\"title\":\"标题\",\"sessionID\":\"ses_x\",\"cwd\":\"/home/u/oc\"}\n\
+             {\"type\":\"tool.start\",\"ts\":2000,\"tool\":\"task\",\"toolCallId\":\"a\"}\n\
+             {\"type\":\"tool.start\",\"ts\":3000,\"tool\":\"bash\",\"toolCallId\":\"b\"}\n",
+        );
+        let s = scan_head(&p, true);
+        assert_eq!(s.name.as_deref(), Some("标题"));
+        assert_eq!(s.directory.as_deref(), Some("/home/u/oc"));
+        assert_eq!(s.agent_count, 1); // 只有 task 计入
+        assert_eq!(s.first_ts_ms, Some(1000));
+        assert_eq!(scan_tail_ts(&p), Some(3000));
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn session_duration_zero_for_single_event() {
+        // 单事件文件：首尾时间戳相同 → duration = Some(0)
+        let p = write_temp(
+            "meta-nodur",
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"},\"timestamp\":\"2026-01-01T10:00:00Z\",\"uuid\":\"a\"}\n",
+        );
+        let head = scan_head(&p, false);
+        assert_eq!(
+            match (head.first_ts_ms, scan_tail_ts(&p)) {
+                (Some(a), Some(b)) if b >= a => Some(b - a),
+                _ => None,
+            },
+            Some(0)
+        );
+        std::fs::remove_file(&p).ok();
     }
 
     #[test]
