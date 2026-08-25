@@ -599,6 +599,31 @@ tbody tr:hover td { background: var(--surface-2); }
   transition: filter 0.15s ease;
 }
 .step-card > summary:hover { filter: brightness(0.97); }
+
+/* 会话回放：轮次区隔 + 三类信息卡片（与时间轴同源） */
+.rp-turn-sep {
+  margin: 14px 0 8px;
+  padding: 5px 12px;
+  font-size: 0.86em;
+  font-weight: 600;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid #c6dafc;
+  border-radius: 8px;
+}
+.step-card.rp-user > summary { background: #f1f5f9; color: #334155; border-left-color: #64748b; }
+.step-card.rp-llm > summary { background: var(--accent-soft); color: #1e40af; border-left-color: var(--accent); }
+.step-card.rp-tool > summary { background: var(--ok-soft); color: #166534; border-left-color: var(--ok); }
+.rp-kind-icon { margin-right: 6px; font-size: 1.1em; }
+.rp-kind-label {
+  margin-left: 6px;
+  font-size: 0.72em;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--muted);
+}
 .step-card[open] > summary { border-radius: 10px 10px 0 0; }
 .step-card .step-body { padding: 12px 16px; }
 .step-card .seq-no { font-weight: 400; font-size: 0.8em; min-width: 28px; }

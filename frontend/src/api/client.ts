@@ -6,7 +6,6 @@ import type {
   EmbeddedResponse,
   MermaidResponse,
   ParseResult,
-  ReplayResponse,
   TraceEntry,
   WorkflowNode,
 } from './types'
@@ -59,13 +58,6 @@ export const api = {
 
   subagent: (sessionId: string) =>
     request<ParseResult>(`/api/subagent/${encodeURIComponent(sessionId)}`, { method: 'POST' }),
-
-  replay: (source: 'opencode' | 'claude_code', rawEvents: unknown[]) =>
-    request<ReplayResponse>('/api/derive/replay', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ source, rawEvents }),
-    }),
 
   mermaid: (req: {
     kind: string

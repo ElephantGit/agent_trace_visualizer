@@ -327,14 +327,6 @@ export function useSubagent(sessionId: string | null) {
   })
 }
 
-export function useReplay(source: 'opencode' | 'claude_code', rawEvents: unknown[] | undefined) {
-  return useQuery({
-    queryKey: ['replay', source, rawEvents?.length ?? 0],
-    queryFn: () => api.replay(source, rawEvents!),
-    enabled: !!rawEvents && rawEvents.length > 0,
-  })
-}
-
 export function useMermaid(req: {
   kind: string
   rawEvents?: unknown[]

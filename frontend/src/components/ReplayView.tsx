@@ -1,58 +1,52 @@
-// Shared session-replay engine — the React version of the legacy HTML
-// <details>/<summary> card stream with 11 color-coded categories,
-// pagination (50/page), keyword + category filters, and legend chips.
+// 会话回放——与时间轴同源的三类信息视图（buildTimeline / buildTimelineOpencode）：
+// 只展示 用户真实输入 / 模型文本输出 / 工具调用+结果（合并为一条），
+// 按轮次分组：用户输入 → 模型响应（含工具调用）→ 工具结果返回 = 一轮。
+// 工作流视图作为子页保留。
 
-import { useMemo, useState } from 'react'
-import type { CategoryStyle, ReplayResponse } from '../api/types'
-import { Pagination, Pills, Info } from './ui/primitives'
-import ReplayStepCard from './ReplayStepCard'
+import { Fragment, useMemo, useState } from 'react'
+import type { TimelineEvent } from '../derive'
+import { buildTimeline, buildTimelineOpencode, formatDuration, grouped } from '../derive'
+import { Pagination, Info, DebugJson } from './ui/primitives'
 import WorkflowView from './WorkflowView'
 
+const KIND_META: Record<string, { icon: string; label: string; cls: string }> = {
+  user: { icon: '👤', label: '用户输入', cls: 'rp-user' },
+  llm: { icon: '🤖', label: '模型文本', cls: 'rp-llm' },
+  tool: { icon: '🔧', label: '工具', cls: 'rp-tool' },
+}
+
+const PAGE_SIZE = 50
+
+function formatClock(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 export default function ReplayView({
-  data,
+  agent,
+  rawEvents,
   workflowRoot,
   result,
 }: {
-  data: ReplayResponse
+  agent: 'claude_code' | 'opencode'
+  rawEvents: unknown[]
   workflowRoot?: import('../api/types').WorkflowNode | null
   result?: import('../api/types').ParseResult | null
 }) {
   const [mode, setMode] = useState<'replay' | 'workflow'>('replay')
-  const [selected, setSelected] = useState<string[]>(() =>
-    data.categories.map(([key]) => key),
-  )
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
 
-  const styles = useMemo(() => new Map<string, CategoryStyle>(data.categories), [data])
-  const present = useMemo(
-    () => data.categories.filter(([key]) => data.steps.some((s) => s.category === key)),
-    [data],
+  const model = useMemo(
+    () => (agent === 'opencode' ? buildTimelineOpencode(rawEvents) : buildTimeline(rawEvents)),
+    [agent, rawEvents],
   )
-
-  const filtered = useMemo(() => {
-    const active = new Set(selected)
-    return data.steps.filter(
-      (s) =>
-        active.has(s.category) &&
-        (!keyword ||
-          JSON.stringify({ ...s, content: s.content }).toLowerCase().includes(keyword.toLowerCase())),
-    )
-  }, [data.steps, selected, keyword])
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / data.pageSize))
-  const safePage = Math.min(page, totalPages)
-  const start = (safePage - 1) * data.pageSize
-  const pageSteps = filtered.slice(start, start + data.pageSize)
-
-  if (data.steps.length === 0) {
-    return <Info>暂无会话事件可供回放。</Info>
-  }
 
   const viewSwitch = (
     <div className="pills" style={{ margin: '6px 0' }}>
       <button className={`pill ${mode === 'replay' ? 'pill-active' : ''}`} onClick={() => setMode('replay')}>
-        📜 事件回放
+        📜 会话回放
       </button>
       <button className={`pill ${mode === 'workflow' ? 'pill-active' : ''}`} onClick={() => setMode('workflow')}>
         🔀 工作流视图
@@ -69,35 +63,40 @@ export default function ReplayView({
     )
   }
 
+  const filtered = useMemo(
+    () =>
+      model.events.filter(
+        (e) =>
+          !keyword ||
+          e.name.toLowerCase().includes(keyword.toLowerCase()) ||
+          e.tool_name.toLowerCase().includes(keyword.toLowerCase()),
+      ),
+    [model.events, keyword],
+  )
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const start = (safePage - 1) * PAGE_SIZE
+  const pageEvents = filtered.slice(start, start + PAGE_SIZE)
+
+  if (model.events.length === 0) {
+    return (
+      <div>
+        {viewSwitch}
+        <Info>暂无会话事件可供回放。</Info>
+      </div>
+    )
+  }
+
   return (
     <div>
       {viewSwitch}
-      <h3>📜 会话回放</h3>
-      <p className="muted">共 {data.steps.length} 个步骤 — 不同颜色代表不同事件类型</p>
+      <p className="muted">
+        共 {model.events.length} 个事件 · {new Set(model.events.map((e) => e.turn_no)).size} 轮对话 —
+        每轮 = 用户输入 → 模型响应（含工具调用）→ 工具结果返回
+      </p>
 
-      {present.length > 1 && (
-        <div className="legend-chips">
-          {present.map(([key]) => {
-            const s = styles.get(key)!
-            const count = data.steps.filter((st) => st.category === key).length
-            return (
-              <span
-                key={key}
-                className="legend-chip"
-                style={{
-                  background: s.header_bg,
-                  color: s.text,
-                  border: `1px solid ${s.border}`,
-                }}
-              >
-                {s.icon} {s.label} ({count})
-              </span>
-            )
-          })}
-        </div>
-      )}
-
-      <div className="pills">
+      <div className="pills" style={{ margin: '6px 0' }}>
         <input
           type="text"
           placeholder="关键词搜索"
@@ -108,48 +107,106 @@ export default function ReplayView({
           }}
           className="pill-input"
         />
-        <Pills
-          options={present.map(([key]) => {
-            const s = styles.get(key)!
-            const count = data.steps.filter((st) => st.category === key).length
-            return `${s.icon} ${s.label} (${count})`
-          })}
-          selected={selected
-            .filter((k) => styles.has(k))
-            .map((k) => {
-              const s = styles.get(k)!
-              const count = data.steps.filter((st) => st.category === k).length
-              return `${s.icon} ${s.label} (${count})`
-            })}
-          onChange={(opts) => {
-            setSelected(
-              opts
-                .map((o) => present.find(([key]) => {
-                  const s = styles.get(key)!
-                  return o === `${s.icon} ${s.label} (${data.steps.filter((st) => st.category === key).length})`
-                })?.[0])
-                .filter(Boolean) as string[],
-            )
-            setPage(1)
-          }}
-          multi
-        />
       </div>
-
-      {selected.length === 0 && <Info>请至少选择一个事件类型以查看回放。</Info>}
 
       <Pagination
         page={safePage}
         totalPages={totalPages}
         total={filtered.length}
         start={filtered.length === 0 ? 0 : start + 1}
-        end={Math.min(start + data.pageSize, filtered.length)}
+        end={Math.min(start + PAGE_SIZE, filtered.length)}
         onPage={setPage}
       />
 
-      {pageSteps.map((step, i) => (
-        <ReplayStepCard key={`${step.seq}-${i}`} step={step} style={styles.get(step.category)} />
-      ))}
+      {pageEvents.map((e, i) => {
+        const globalIdx = start + i
+        const prev = globalIdx > 0 ? filtered[globalIdx - 1] : null
+        const isTurnStart = !prev || prev.turn_no !== e.turn_no
+        return (
+          <Fragment key={`${e.turn_no}-${e.ts_ms}-${globalIdx}`}>
+            {isTurnStart && (
+              <div className="rp-turn-sep">
+                ━━━ 第 {e.turn_no} 轮 · {formatClock(e.ts_ms)} ━━━
+              </div>
+            )}
+            <RoundEventCard event={e} />
+          </Fragment>
+        )
+      })}
     </div>
+  )
+}
+
+function RoundEventCard({ event }: { event: TimelineEvent }) {
+  const meta = KIND_META[event.kind] ?? KIND_META.user
+  const usage = (event.detail.usage ?? {}) as Record<string, number>
+  const detail = event.detail as Record<string, unknown>
+
+  const dur =
+    event.duration_ms !== null
+      ? event.duration_ms >= 1000
+        ? `${(event.duration_ms / 1000).toFixed(1)}s`
+        : `${event.duration_ms.toFixed(0)}ms`
+      : null
+
+  return (
+    <details
+      className={`step-card ${meta.cls}`}
+      open
+      style={{ marginLeft: Math.min(event.depth, 8) * 18 }}
+    >
+      <summary>
+        <span className="rp-kind-icon">{meta.icon}</span>
+        <span className="title-text">{event.name.slice(0, 120)}{event.is_error ? ' ❌' : ''}</span>
+        <span className="rp-kind-label">{meta.label}</span>
+        {event.tool_name && <span className="badge">🔧 {event.tool_name}</span>}
+        {dur && <span className="micro-tag">⏱️ {dur}</span>}
+        <span className="fold-toggle">展开 ▼</span>
+      </summary>
+      <div className="step-body">
+        {event.kind === 'user' && (
+          <pre className="debug-json">{typeof detail.text === 'string' ? detail.text : '（空输入）'}</pre>
+        )}
+
+        {event.kind === 'llm' && (
+          <>
+            <pre className="debug-json">
+              {typeof detail.text === 'string' && detail.text ? detail.text : '（无文本输出，仅发起工具调用）'}
+            </pre>
+            <div className="step-meta">
+              {event.detail.model ? `🧩 ${String(event.detail.model)}` : ''}
+              {event.detail.stop_reason ? ` · 停止原因: ${String(event.detail.stop_reason)}` : ''}
+              {usage.input_tokens !== undefined ? ` · 🎯 in=${grouped(Number(usage.input_tokens))}` : ''}
+              {usage.output_tokens !== undefined ? ` out=${grouped(Number(usage.output_tokens))}` : ''}
+            </div>
+          </>
+        )}
+
+        {event.kind === 'tool' && (
+          <>
+            <div className="step-tool-row">
+              <span className="step-tool-name">📥 输入参数</span>
+              {detail.input !== undefined ? (
+                <DebugJson value={detail.input} />
+              ) : (
+                <p className="muted">（无入参）</p>
+              )}
+            </div>
+            <h4>📤 执行结果</h4>
+            {typeof detail.output === 'string' ? (
+              <pre className="debug-json">{detail.output || '（空输出）'}</pre>
+            ) : (
+              <p className="muted">该工具调用没有对应的执行结果。</p>
+            )}
+            {event.status && (
+              <div className="step-meta">
+                {event.is_error ? '❌ ' : '✅ '}状态：{event.status}
+                {event.duration_ms !== null ? ` · 耗时 ${formatDuration(event.duration_ms)}` : ''}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </details>
   )
 }

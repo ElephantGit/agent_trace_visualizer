@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import type { ParseResult } from '../../api/types'
 import { api } from '../../api/client'
-import { useMermaid, useReplay, useWorkflowTree } from '../../hooks'
+import { useMermaid, useWorkflowTree } from '../../hooks'
 import Plot, { plotColors } from '../../components/Plot'
 import MermaidView from '../../components/MermaidView'
 import ReplayView from '../../components/ReplayView'
@@ -43,7 +43,6 @@ export default function OpencodeBody({
   initialTab?: string
 }) {
   const [tab, setTab] = useState(initialTab ?? 'replay')
-  const replay = useReplay('opencode', result.raw_events)
   const workflowTree = useWorkflowTree(result)
   const mermaid = useMermaid({
     kind: 'sequence-opencode',
@@ -78,10 +77,14 @@ export default function OpencodeBody({
       </p>
       <Tabs items={TABS} active={tab} onChange={setTab} />
 
-      {tab === 'replay' && replay.data && (
-        <ReplayView data={replay.data} workflowRoot={workflowTree.data ?? null} result={result} />
+      {tab === 'replay' && (
+        <ReplayView
+          agent="opencode"
+          rawEvents={result.raw_events}
+          workflowRoot={workflowTree.data ?? null}
+          result={result}
+        />
       )}
-      {tab === 'replay' && replay.isLoading && <p className="muted">加载中…</p>}
 
       {tab === 'overview' && (
         <OverviewTab result={result} overview={overview} mermaidSrc={mermaid.data?.src} />

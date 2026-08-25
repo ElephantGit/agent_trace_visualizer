@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from 'react'
 import type { ParseResult } from '../../api/types'
-import { useMermaid, useReplay, useWorkflowTree } from '../../hooks'
+import { useMermaid, useWorkflowTree } from '../../hooks'
 import Plot, { plotColors } from '../../components/Plot'
 import MermaidView from '../../components/MermaidView'
 import ReplayView from '../../components/ReplayView'
@@ -39,7 +39,6 @@ export default function ClaudeBody({
 }) {
   const isTranscript = result.parse_debug.format === 'transcript'
   const [tab, setTab] = useState(initialTab ?? 'replay')
-  const replay = useReplay('claude_code', result.raw_events)
   const workflowTree = useWorkflowTree(result)
   const mermaid = useMermaid({
     kind: 'sequence-claude',
@@ -89,10 +88,14 @@ export default function ClaudeBody({
       </div>
       <Tabs items={tabs} active={tab} onChange={setTab} />
 
-      {tab === 'replay' && replay.data && (
-        <ReplayView data={replay.data} workflowRoot={workflowTree.data ?? null} result={result} />
+      {tab === 'replay' && (
+        <ReplayView
+          agent="claude_code"
+          rawEvents={result.raw_events}
+          workflowRoot={workflowTree.data ?? null}
+          result={result}
+        />
       )}
-      {tab === 'replay' && replay.isLoading && <p className="muted">加载中…</p>}
 
       {tab === 'overview' && (
         <OverviewTab result={result} overview={overview} mermaidSrc={mermaid.data?.src} />
