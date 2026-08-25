@@ -433,7 +433,7 @@ function TokensTab({ turns }: { turns: ParseResult['turns'] }) {
       x: rows.map((r) => r.turn_no),
       y: rows.map((r) => r.cache_creation),
       name: 'Cache Creation（单步）',
-      line: { color: '#a855f7', width: 2, dash: 'dot' },
+      line: { color: '#8b6fbf', width: 2, dash: 'dot' },
     })
   }
   if (hasReasoning) {
@@ -443,7 +443,7 @@ function TokensTab({ turns }: { turns: ParseResult['turns'] }) {
       x: rows.map((r) => r.turn_no),
       y: rows.map((r) => r.reasoning_cum),
       name: '累计 Reasoning',
-      line: { color: '#a855f7', width: 2, dash: 'dot' },
+      line: { color: '#8b6fbf', width: 2, dash: 'dot' },
     })
   }
 

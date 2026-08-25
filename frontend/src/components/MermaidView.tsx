@@ -11,7 +11,23 @@ import { CopyBlock } from './ui/primitives'
 
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'default',
+  theme: 'base',
+  // Slate/blue design-token theme (was mermaid's default blue/pink palette)
+  themeVariables: {
+    primaryColor: '#e8f0fe',
+    primaryBorderColor: '#1a73e8',
+    primaryTextColor: '#1f2937',
+    lineColor: '#94a3b8',
+    textColor: '#1f2937',
+    actorBkg: '#e8f0fe',
+    actorBorder: '#1a73e8',
+    actorTextColor: '#1f2937',
+    signalColor: '#334155',
+    signalTextColor: '#334155',
+    noteBkgColor: '#fdf5e6',
+    noteBorderColor: '#f0d9a6',
+    noteTextColor: '#1f2937',
+  },
   sequence: { mirrorActors: false, messageAlign: 'left' },
 })
 

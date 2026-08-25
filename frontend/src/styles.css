@@ -22,6 +22,15 @@
   --ok: #0a9e6a;
   --bad: #ea4335;
 
+  /* Status tints (cool-hued, harmonized with the slate family) */
+  --ok-soft: #e7f5ef;
+  --ok-border: #b7e3d2;
+  --bad-soft: #fdecea;
+  --bad-border: #f5c9c5;
+  --warn: #b45309;
+  --warn-soft: #fdf5e6;
+  --warn-border: #f0d9a6;
+
   /* Tinted (not pure black) elevation, consistent light from top */
   --shadow-sm: 0 1px 2px rgba(30, 41, 59, 0.05), 0 1px 3px rgba(30, 41, 59, 0.04);
   --shadow-md: 0 4px 12px rgba(30, 41, 59, 0.07), 0 2px 4px rgba(30, 41, 59, 0.05);
@@ -250,9 +259,9 @@ tbody tr:hover td { background: var(--surface-2); }
   margin: 10px 0;
   font-size: 0.92em;
 }
-.banner-info { background: #eff6ff; border-color: #dbeafe; color: #1e40af; }
-.banner-warning { background: #fffbeb; border-color: #fde68a; color: #92400e; }
-.banner-error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.banner-info { background: var(--accent-soft); border-color: #c6dafc; color: var(--accent-strong); }
+.banner-warning { background: var(--warn-soft); border-color: var(--warn-border); color: var(--warn); }
+.banner-error { background: var(--bad-soft); border-color: var(--bad-border); color: #991b1b; }
 
 /* ── Landing ────────────────────────────────────────────────── */
 
@@ -424,7 +433,7 @@ tbody tr:hover td { background: var(--surface-2); }
 .wf-kind-user { color: #64748b; }
 .wf-kind-llm { color: #1a73e8; }
 .wf-kind-tool { color: #0a9e6a; }
-.wf-kind-system { color: #8b5cf6; }
+.wf-kind-system { color: var(--faint); }
 .wf-status { color: var(--muted); font-size: 0.82em; }
 .wf-tokens { color: #475569; }
 .wf-dur { color: #475569; }
@@ -650,8 +659,8 @@ tbody tr:hover td { background: var(--surface-2); }
 .step-error-box {
   margin-top: 8px;
   padding: 7px 10px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--bad-soft);
+  border: 1px solid var(--bad-border);
   border-radius: 8px;
   color: #991b1b;
   font-size: 0.82em;
@@ -747,9 +756,9 @@ tbody tr:hover td { background: var(--surface-2); }
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--bad-border);
   border-radius: 10px;
-  background: #fef2f2;
+  background: var(--bad-soft);
   margin-bottom: 10px;
   position: sticky;
   top: 8px;
