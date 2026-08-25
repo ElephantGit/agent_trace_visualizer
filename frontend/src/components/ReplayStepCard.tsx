@@ -78,21 +78,11 @@ export default function ReplayStepCard({
       return (
         <>
           <span className="content-text">{step.content.slice(0, 150)}…</span>
-          <details style={{ marginTop: 6 }}>
-            <summary style={{ cursor: 'pointer', color: s.border, fontSize: '0.82em' }}>
+          <details className="step-fold">
+            <summary className="step-fold-summary" style={{ color: s.border }}>
               📝 展开全部内容 ({contentLen} 字符)
             </summary>
-            <div
-              className="content-text"
-              style={{
-                marginTop: 6,
-                padding: 10,
-                background: '#f8fafc',
-                borderRadius: 4,
-                maxHeight: 400,
-                overflowY: 'auto',
-              }}
-            >
+            <div className="content-text step-fold-content">
               {step.content}
             </div>
           </details>
@@ -117,24 +107,14 @@ export default function ReplayStepCard({
       </summary>
       <div className="step-body">
         {(toolName || (toolInput && Object.keys(toolInput).length > 0)) && (
-          <div style={{ marginBottom: 8, fontSize: '0.85em', color: '#64748b' }}>
-            {toolName && <span style={{ fontWeight: 600 }}>🔧 {toolName}</span>}
+          <div className="step-tool-row">
+            {toolName && <span className="step-tool-name">🔧 {toolName}</span>}
             {toolInput && Object.keys(toolInput).length > 0 && (
-              <details style={{ marginTop: 6 }}>
-                <summary style={{ cursor: 'pointer', color: s.border, fontSize: '0.88em' }}>
+              <details className="step-fold">
+                <summary className="step-fold-summary" style={{ color: s.border }}>
                   📥 输入参数
                 </summary>
-                <pre
-                  style={{
-                    background: '#f1f5f9',
-                    padding: 8,
-                    borderRadius: 4,
-                    overflowX: 'auto',
-                    fontSize: '0.78em',
-                    marginTop: 4,
-                    maxHeight: 200,
-                  }}
-                >
+                <pre className="step-tool-pre">
                   {JSON.stringify(toolInput, null, 2).slice(0, 2000) +
                     (JSON.stringify(toolInput, null, 2).length > 2000 ? '\n… (输入过长，已截断)' : '')}
                 </pre>
@@ -144,27 +124,12 @@ export default function ReplayStepCard({
         )}
 
         {metaParts.length > 0 && (
-          <div style={{ fontSize: '0.78em', color: '#94a3b8', marginBottom: 8 }}>
-            {metaParts.join(' · ')}
-          </div>
+          <div className="step-meta">{metaParts.join(' · ')}</div>
         )}
 
         {content}
 
-        {step.is_error && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: '6px 10px',
-              background: '#fef2f2',
-              borderRadius: 4,
-              color: '#991b1b',
-              fontSize: '0.82em',
-            }}
-          >
-            ⚠️ 此步骤执行出错
-          </div>
-        )}
+        {step.is_error && <div className="step-error-box">⚠️ 此步骤执行出错</div>}
       </div>
     </details>
   )

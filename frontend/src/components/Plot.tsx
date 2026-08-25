@@ -34,25 +34,40 @@ export default function Plot({
 }
 
 /// Accept `xaxis: { title: 'Turn' }` (string) and rewrite to the object form
-/// the plotly types demand. Deep-copies nothing else.
+/// the plotly types demand. Also inject the slate design-token theme
+/// (defaults only — explicit layout values win).
 function normalizeLayout(layout: LooseLayout): LooseLayout {
   const out: LooseLayout = { ...layout }
+  // Theme defaults (explicit layout props take precedence)
+  if (out.paper_bgcolor === undefined) out.paper_bgcolor = '#ffffff'
+  if (out.plot_bgcolor === undefined) out.plot_bgcolor = '#ffffff'
+  if (out.font === undefined) out.font = { color: '#334155', size: 12 }
+  const axisTheme = {
+    gridcolor: '#e2e8f0',
+    zerolinecolor: '#e2e8f0',
+    linecolor: '#cbd5e1',
+    title: { font: { color: '#475569' } },
+    tickfont: { color: '#64748b' },
+  }
   for (const axis of ['xaxis', 'yaxis', 'xaxis2', 'yaxis2'] as const) {
     const a = out[axis]
-    if (a && typeof a === 'object' && typeof (a as Record<string, unknown>).title === 'string') {
-      const copy = { ...(a as Record<string, unknown>) }
-      copy.title = { text: copy.title }
-      out[axis] = copy
+    const obj = a && typeof a === 'object' ? { ...(a as Record<string, unknown>) } : {}
+    if (typeof obj.title === 'string') obj.title = { text: obj.title }
+    for (const [k, v] of Object.entries(axisTheme)) {
+      if (obj[k] === undefined) obj[k] = v
     }
+    if (Object.keys(obj).length > 0) out[axis] = obj
   }
   return out
 }
 
 // Small helpers mirroring the shared Plotly builders in the legacy views.
+// Categorical palette desaturated to match the slate/blue design language
+// (was matplotlib tab10 — fully saturated, clashed with the page).
 export function plotColors(i: number): string {
   const SAFE_PALETTE = [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+    '#1a73e8', '#4e9e8a', '#c98a2d', '#c25b6b', '#8b6fbf',
+    '#4f9fa8', '#8a8f98', '#d68a3d', '#7a9e5c', '#b56a86',
   ]
   return SAFE_PALETTE[i % SAFE_PALETTE.length]
 }

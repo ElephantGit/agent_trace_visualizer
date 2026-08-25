@@ -241,7 +241,7 @@ function TokensTab({ result }: { result: ParseResult }) {
       x: rows.map((r) => r.turn_no),
       y: rows.map((r) => r.cache_creation),
       name: 'Cache Creation',
-      line: { color: '#a855f7', width: 2, dash: 'dot' },
+      line: { color: '#8b6fbf', width: 2, dash: 'dot' },
     })
   }
 

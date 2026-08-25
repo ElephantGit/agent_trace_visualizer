@@ -73,7 +73,7 @@ export default function GeminiView() {
           GEMINI_TELEMETRY_TRACES_ENABLED 生成的 telemetry.log（拼接 JSON 对象格式）
         </p>
       </aside>
-      <div className="main">
+      <div className="main" id="main">
         {isLoading && <p className="muted">解析中…</p>}
         {data && <GeminiBody result={data as ParseResult} />}
         {!content && <p className="muted">请先上传 telemetry.log。</p>}
@@ -446,7 +446,7 @@ function ApiTokensTab({ events }: { events: GemEvent[] }) {
             x: cumulative.map((c) => c.callNo),
             y: cumulative.map((c) => c.out),
             name: '累计输出',
-            line: { color: '#34a853', width: 2 },
+            line: { color: '#0a9e6a', width: 2 },
             fill: 'tozeroy',
             fillcolor: 'rgba(52,168,83,0.08)',
           },
@@ -458,7 +458,7 @@ function ApiTokensTab({ events }: { events: GemEvent[] }) {
       <Plot
         data={[
           { type: 'bar', x: cumulative.map((c) => c.callNo), y: api.map((e) => Number(e.input_tokens ?? 0)), name: 'Input', marker: { color: '#1a73e8' } },
-          { type: 'bar', x: cumulative.map((c) => c.callNo), y: api.map((e) => Number(e.output_tokens ?? 0)), name: 'Output', marker: { color: '#34a853' } },
+          { type: 'bar', x: cumulative.map((c) => c.callNo), y: api.map((e) => Number(e.output_tokens ?? 0)), name: 'Output', marker: { color: '#0a9e6a' } },
         ]}
         layout={{ barmode: 'group', height: 320, margin: { t: 10, b: 40 }, xaxis: { title: '第 N 次 API 调用' }, yaxis: { title: 'Tokens' } }}
       />

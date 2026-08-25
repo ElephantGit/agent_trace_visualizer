@@ -30,15 +30,28 @@ fn projects_root() -> PathBuf {
     PathBuf::from(home).join(".claude/projects")
 }
 
-/// path 必须落在 ~/.claude/projects 下且为 .jsonl 文件（信任边界）。
-fn allowed_live_path(path: &str) -> bool {
+fn opencode_trace_root() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(home).join(".local/share/opencode/trace")
+}
+
+/// path 必须落在允许的 trace 目录下且扩展名匹配（信任边界）：
+/// - Claude Code：~/.claude/projects 下的 *.jsonl
+/// - Opencode：~/.local/share/opencode/trace 下的 *.ndjson
+pub(crate) fn allowed_live_path(path: &str) -> bool {
     let Ok(p) = std::fs::canonicalize(path) else {
         return false;
     };
-    let Ok(root) = std::fs::canonicalize(projects_root()) else {
+    let Some(ext) = p.extension().and_then(|e| e.to_str()) else {
         return false;
     };
-    p.starts_with(&root) && p.extension().and_then(|e| e.to_str()) == Some("jsonl")
+    for (root, want_ext) in [(projects_root(), "jsonl"), (opencode_trace_root(), "ndjson")] {
+        if ext == want_ext && std::fs::canonicalize(&root).map(|r| p.starts_with(&r)).unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 // ── SSE 端点 ──────────────────────────────────────────────────
@@ -119,10 +132,29 @@ pub struct LiveLatest {
     pub active: bool,
 }
 
-pub async fn live_latest_handler() -> Result<Json<LiveLatest>, ApiError> {
-    let root = projects_root();
+#[derive(Deserialize)]
+pub struct LiveLatestQuery {
+    /// claude_code（默认）| opencode
+    pub agent: Option<String>,
+}
+
+pub async fn live_latest_handler(
+    Query(q): Query<LiveLatestQuery>,
+) -> Result<Json<LiveLatest>, ApiError> {
+    let is_opencode = q.agent.as_deref() == Some("opencode");
+    let root = if is_opencode {
+        opencode_trace_root()
+    } else {
+        projects_root()
+    };
+    let want_ext = if is_opencode { "ndjson" } else { "jsonl" };
+    let root_label = if is_opencode {
+        "~/.local/share/opencode/trace 不存在"
+    } else {
+        "~/.claude/projects 不存在"
+    };
     if !root.is_dir() {
-        return Err(ApiError::not_found("~/.claude/projects 不存在"));
+        return Err(ApiError::not_found(root_label));
     }
 
     let mut best: Option<(u64, PathBuf)> = None;
@@ -135,7 +167,7 @@ pub async fn live_latest_handler() -> Result<Json<LiveLatest>, ApiError> {
             continue;
         }
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+        if path.extension().and_then(|e| e.to_str()) != Some(want_ext) {
             continue;
         }
         let Ok(meta) = entry.metadata() else { continue };

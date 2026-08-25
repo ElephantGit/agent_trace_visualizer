@@ -10,6 +10,9 @@ import type { AgentType, ParseResult } from './api/types'
 
 export type LiveStatus = 'idle' | 'loading' | 'live' | 'polling' | 'error'
 
+/// 支持实时监控的 agent 类型（claude_code transcript / opencode ndjson）。
+export type LiveAgent = 'claude_code' | 'opencode'
+
 export interface LiveStreamState {
   rawEvents: unknown[]
   /// 节流刷新的完整解析结果（会话回放/总览/Token/工具/Subagent/成本等
@@ -40,7 +43,10 @@ export interface LiveStreamState {
 ///   有写入、且当前文件已 10s 无新事件时，切换到那个更新的会话
 ///   （用户先点监控再开新会话、或多会话并行的场景）；
 ///   手动选择文件后关闭自动跟随，可随时切回。
-export function useLiveStream(initialPath: string | null): LiveStreamState {
+export function useLiveStream(
+  initialPath: string | null,
+  agent: LiveAgent = 'claude_code',
+): LiveStreamState {
   const [path, setPath] = useState(initialPath)
   const [autoFollow, setAutoFollow] = useState(true)
   const [rawEvents, setRawEvents] = useState<unknown[]>([])
@@ -53,6 +59,8 @@ export function useLiveStream(initialPath: string | null): LiveStreamState {
   pausedRef.current = paused
   const pathRef = useRef(path)
   pathRef.current = path
+  const agentRef = useRef(agent)
+  agentRef.current = agent
   const seenUuids = useRef<Set<string>>(new Set())
   // 最近一次追加事件的时间——用于判断"当前文件是否安静"
   const lastAppendAt = useRef<number>(Date.now())
@@ -106,7 +114,7 @@ export function useLiveStream(initialPath: string | null): LiveStreamState {
     refreshInFlight.current = true
     const startedAt = Date.now()
     api
-      .parseFromPath('claude_code' as AgentType, p)
+      .parseFromPath(agentRef.current, p)
       .then((r) => {
         if (pausedRef.current) return
         setResult(r)
@@ -152,7 +160,7 @@ export function useLiveStream(initialPath: string | null): LiveStreamState {
       refreshTimer.current = null
     }
     api
-      .parseFromPath('claude_code' as AgentType, path)
+      .parseFromPath(agent, path)
       .then((r) => {
         for (const e of r.raw_events) {
           const u = (e as Record<string, unknown>).uuid
@@ -166,14 +174,14 @@ export function useLiveStream(initialPath: string | null): LiveStreamState {
         setStatus('live')
       })
       .catch(() => setStatus('error'))
-  }, [path, reloadTick])
+  }, [path, reloadTick, agent])
 
   // 自动跟随最新活跃会话：当前文件安静 10s+ 且另有文件 15s 内有写入 → 切换
   useEffect(() => {
     if (!path || !autoFollow) return
     const timer = setInterval(async () => {
       try {
-        const latest = await api.liveLatest()
+        const latest = await api.liveLatest(agent)
         if (
           latest.path !== path &&
           Date.now() - lastAppendAt.current > 10_000 &&
@@ -186,7 +194,7 @@ export function useLiveStream(initialPath: string | null): LiveStreamState {
       }
     }, 3000)
     return () => clearInterval(timer)
-  }, [path, autoFollow])
+  }, [path, autoFollow, agent])
 
   // SSE 订阅 + 轮询降级
   useEffect(() => {
@@ -259,7 +267,7 @@ export function useLiveStream(initialPath: string | null): LiveStreamState {
     followLatest: () => {
       setAutoFollow(true)
       api
-        .liveLatest()
+        .liveLatest(agent)
         .then((latest) => setPath(latest.path))
         .catch(() => {})
     },
@@ -294,8 +302,21 @@ export function useEmbedded(sessionId: string | null, agentType: string | null) 
   })
 }
 
-export function useTraces(root: string | undefined) {
-  return useQuery({ queryKey: ['traces', root ?? ''], queryFn: () => api.traces(root) })
+export function useTraces(root: string | undefined, agent?: 'claude_code' | 'opencode') {
+  return useQuery({
+    queryKey: ['traces', root ?? '', agent ?? ''],
+    queryFn: () => api.traces(root, agent),
+  })
+}
+
+/// 单个 trace 文件的可读会话名（文件列表/会话下拉框展示用）。
+export function useTraceName(path: string | null, agent?: 'claude_code' | 'opencode') {
+  return useQuery({
+    queryKey: ['trace-name', path ?? '', agent ?? ''],
+    queryFn: () => api.traceName(path!, agent),
+    enabled: !!path,
+    staleTime: 5 * 60_000,
+  })
 }
 
 export function useSubagent(sessionId: string | null) {
