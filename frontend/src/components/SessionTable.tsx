@@ -16,6 +16,12 @@ const ACTIVE_WINDOW_MS = 5 * 60 * 1000
 type SortKey = 'mtime' | 'duration'
 type StatusFilter = 'all' | 'active' | 'ended'
 
+const AGENT_LABELS: Record<string, string> = {
+  claude_code: 'Claude Code',
+  opencode: 'Opencode',
+  gemini: 'Gemini',
+}
+
 function fmtTime(ms: number): string {
   const d = new Date(ms)
   const pad = (n: number, w = 2) => String(n).padStart(w, '0')
@@ -29,18 +35,27 @@ export default function SessionTable({
   traces,
   selected,
   onSelect,
+  showAgentColumn = false,
 }: {
   agent: LiveAgent
   traces: TraceEntry[]
   selected: string | null
   onSelect: (path: string) => void
+  /// 跨 agent 聚合视图：显示 Agent 列并提供 agent 过滤 chips
+  showAgentColumn?: boolean
 }) {
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
   const [dirFilter, setDirFilter] = useState<string>('__all__')
   const [status, setStatus] = useState<StatusFilter>('all')
+  const [agentFilter, setAgentFilter] = useState<string>('__all__')
   const [sortKey, setSortKey] = useState<SortKey>('mtime')
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
+
+  const agentOptions = useMemo(
+    () => [...new Set(traces.map((t) => t.agent).filter((a): a is string => !!a))].sort(),
+    [traces],
+  )
 
   const directories = useMemo(
     () =>
@@ -55,6 +70,7 @@ export default function SessionTable({
     const out = traces.filter((t) => {
       if (status !== 'all' && isActive(t) !== (status === 'active')) return false
       if (dirFilter !== '__all__' && t.directory !== dirFilter) return false
+      if (agentFilter !== '__all__' && t.agent !== agentFilter) return false
       if (kw) {
         const hay = `${t.name ?? ''} ${t.path} ${t.directory ?? ''}`.toLowerCase()
         if (!hay.includes(kw)) return false
@@ -70,7 +86,7 @@ export default function SessionTable({
       return sortDir === 'desc' ? db - da : da - db
     })
     return out
-  }, [traces, keyword, dirFilter, status, sortKey, sortDir])
+  }, [traces, keyword, dirFilter, status, agentFilter, sortKey, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -120,6 +136,31 @@ export default function SessionTable({
             </option>
           ))}
         </select>
+        {showAgentColumn && agentOptions.length > 0 && (
+          <div className="pills" style={{ margin: 0 }}>
+            <button
+              className={`pill ${agentFilter === '__all__' ? 'pill-active' : ''}`}
+              onClick={() => {
+                setAgentFilter('__all__')
+                setPage(1)
+              }}
+            >
+              全部 Agent
+            </button>
+            {agentOptions.map((a) => (
+              <button
+                key={a}
+                className={`pill ${agentFilter === a ? 'pill-active' : ''}`}
+                onClick={() => {
+                  setAgentFilter(a)
+                  setPage(1)
+                }}
+              >
+                {AGENT_LABELS[a] ?? a}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="pills" style={{ margin: 0 }}>
           <button
             className={`pill ${status === 'all' ? 'pill-active' : ''}`}
@@ -160,6 +201,7 @@ export default function SessionTable({
               <thead>
                 <tr>
                   <th>会话</th>
+                  {showAgentColumn && <th>Agent</th>}
                   <th>状态</th>
                   <th className="session-sortable" onClick={() => toggleSort('mtime')}>
                     最后活跃时间{sortIndicator('mtime')}
@@ -174,10 +216,11 @@ export default function SessionTable({
               <tbody>
                 {rows.map((t) => (
                   <SessionRow
-                    key={t.path}
-                    agent={agent}
+                    key={`${t.agent ?? agent}-${t.path}`}
+                    agent={(t.agent as LiveAgent | undefined) ?? agent}
                     t={t}
                     selected={selected === t.path}
+                    showAgent={showAgentColumn}
                     onClick={() => onSelect(t.path)}
                   />
                 ))}
@@ -202,11 +245,13 @@ function SessionRow({
   agent,
   t,
   selected,
+  showAgent,
   onClick,
 }: {
   agent: LiveAgent
   t: TraceEntry
   selected: boolean
+  showAgent: boolean
   onClick: () => void
 }) {
   const meta = useSessionMeta(t.path, agent)
@@ -222,6 +267,9 @@ function SessionRow({
       <td className="session-name">
         <TraceLabel path={t.path} agent={agent} name={t.name} />
       </td>
+      {showAgent && (
+        <td className="session-agent">{AGENT_LABELS[t.agent ?? agent] ?? (t.agent ?? agent)}</td>
+      )}
       <td>
         {active ? (
           <span className="badge session-live-badge">● 进行中</span>

@@ -105,6 +105,10 @@ export default function ClaudeCodeView() {
             <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
           )}
           {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
+          <hr />
+          <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
+            📊 Trajectory 数据搜集
+          </Link>
         </div>
         {/* 下半部：agent 切换（常驻底部） */}
         <AgentSwitcher />

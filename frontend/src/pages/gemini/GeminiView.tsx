@@ -75,6 +75,10 @@ export default function GeminiView() {
           <p className="muted">
             GEMINI_TELEMETRY_TRACES_ENABLED 生成的 telemetry.log（拼接 JSON 对象格式）
           </p>
+          <hr />
+          <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
+            📊 Trajectory 数据搜集
+          </Link>
         </div>
         {/* 下半部：agent 切换（常驻底部） */}
         <AgentSwitcher />

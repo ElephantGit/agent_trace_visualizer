@@ -95,6 +95,8 @@ export const api = {
       `/api/trace-name?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
     ),
 
+  trajectory: () => request<TraceEntry[]>('/api/trajectory'),
+
   sessionMeta: (path: string, agent?: 'claude_code' | 'opencode') =>
     request<{
       name: string | null

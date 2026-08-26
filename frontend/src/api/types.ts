@@ -96,6 +96,8 @@ export interface TraceEntry {
   directory?: string | null
   /// 会话运行时长（毫秒）
   durationMs?: number | null
+  /// 所属 agent（trajectory 聚合接口返回；单 agent 列表无此字段）
+  agent?: string
 }
 
 export interface MermaidResponse {

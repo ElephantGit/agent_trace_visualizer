@@ -507,6 +507,24 @@ await page.waitForSelector('.live-banner', { timeout: 15000 })
 console.log('16d. opencode live/file mode toggle OK')
 rmSync(OC_LIVE_FILE, { force: true })
 
+// ── 17. Trajectory 聚合页（跨 agent 会话 + 筛选）────────────────
+await page.goto(`${BASE}/claude-code`)
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.click('text=📊 Trajectory 数据搜集')
+await page.waitForURL('**/trajectory')
+await page.waitForSelector('.session-table', { timeout: 15000 })
+// Agent 列 + agent 过滤 chips
+await page.waitForSelector('.session-table th >> text=Agent', { timeout: 10000 })
+await page.waitForSelector('.session-toolbar .pill:has-text("Claude Code")', { timeout: 10000 })
+// 过滤到仅 Opencode → Agent 列只剩 Opencode
+await page.click('.session-toolbar .pill:has-text("Opencode")')
+await page.waitForTimeout(800)
+const agentsShown = await page.evaluate(() => [...new Set([...document.querySelectorAll('.session-row .session-agent')].map((c) => c.textContent))])
+if (agentsShown.length !== 1 || agentsShown[0] !== 'Opencode') {
+  throw new Error(`agent filter should show only Opencode rows, got ${agentsShown}`)
+}
+console.log('17. trajectory aggregate + agent filter OK')
+
 await browser.close()
 
 if (errors.length > 0) {

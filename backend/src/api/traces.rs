@@ -46,27 +46,14 @@ fn opencode_root() -> std::path::PathBuf {
     std::path::PathBuf::from(home).join(".local/share/opencode/trace")
 }
 
-/// GET /api/traces?root=&agent= — rglob *.jsonl/*.ndjson, mtime-descending.
-pub async fn traces_handler(
-    Query(q): Query<TracesQuery>,
-) -> Result<Json<Vec<TraceEntry>>, ApiError> {
-    let is_opencode = q.agent.as_deref() == Some("opencode");
-    let root = q
-        .root
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            if is_opencode {
-                opencode_root()
-            } else {
-                default_root()
-            }
-        });
+/// rglob 一个 trace 目录 → 按 mtime 倒序的条目列表（前 300 个做
+/// 名称/目录/时长轻量扫描）。traces 与 trajectory 共用。
+fn list_entries(root: &Path, is_opencode: bool) -> Vec<TraceEntry> {
     if !root.is_dir() {
-        return Ok(Json(Vec::new()));
+        return Vec::new();
     }
-
     let mut entries: Vec<TraceEntry> = Vec::new();
-    for entry in walkdir::WalkDir::new(&root)
+    for entry in walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()
         .filter_map(Result::ok)
@@ -119,7 +106,51 @@ pub async fn traces_handler(
             _ => None,
         };
     }
-    Ok(Json(entries))
+    entries
+}
+
+/// GET /api/traces?root=&agent= — rglob *.jsonl/*.ndjson, mtime-descending.
+pub async fn traces_handler(
+    Query(q): Query<TracesQuery>,
+) -> Result<Json<Vec<TraceEntry>>, ApiError> {
+    let is_opencode = q.agent.as_deref() == Some("opencode");
+    let root = q
+        .root
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            if is_opencode {
+                opencode_root()
+            } else {
+                default_root()
+            }
+        });
+    Ok(Json(list_entries(&root, is_opencode)))
+}
+
+// ── Trajectory 聚合（跨 agent 会话）────────────────────────────
+
+#[derive(Serialize)]
+pub struct TrajectoryEntry {
+    #[serde(flatten)]
+    pub entry: TraceEntry,
+    /// claude_code | opencode
+    pub agent: &'static str,
+}
+
+/// GET /api/trajectory — 聚合当前用户所有本地 agent（claude_code +
+/// opencode）的会话，按最后活跃时间倒序。
+pub async fn trajectory_handler() -> Result<Json<Vec<TrajectoryEntry>>, ApiError> {
+    let mut out: Vec<TrajectoryEntry> = Vec::new();
+    for (root, is_oc, agent) in [
+        (default_root(), false, "claude_code"),
+        (opencode_root(), true, "opencode"),
+    ] {
+        for entry in list_entries(&root, is_oc) {
+            out.push(TrajectoryEntry { entry, agent });
+        }
+    }
+    out.sort_by_key(|e| std::cmp::Reverse(e.entry.mtime_ms));
+    Ok(Json(out))
 }
 
 // ── 会话名提取（文件列表可读性）───────────────────────────────

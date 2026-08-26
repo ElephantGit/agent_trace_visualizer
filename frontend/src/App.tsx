@@ -11,6 +11,7 @@ import CompareView from './pages/compare/CompareView'
 import OpencodeView from './pages/opencode/OpencodeView'
 import ClaudeCodeView from './pages/claude/ClaudeCodeView'
 import GeminiView from './pages/gemini/GeminiView'
+import TrajectoryView from './pages/TrajectoryView'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +37,7 @@ function Root() {
       <Route path="/opencode" element={<OpencodeView />} />
       <Route path="/claude-code" element={<ClaudeCodeView />} />
       <Route path="/gemini" element={<GeminiView />} />
+      <Route path="/trajectory" element={<TrajectoryView />} />
       <Route path="/compare" element={<CompareView />} />
       <Route path="*" element={<Landing />} />
     </Routes>
