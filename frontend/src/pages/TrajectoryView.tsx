@@ -3,7 +3,7 @@
 // 点击行加载该会话的详细信息。
 
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { ParseResult, TraceEntry } from '../api/types'
@@ -15,6 +15,7 @@ import OpencodeBody from './opencode/OpencodeBody'
 import type { LiveAgent } from '../hooks'
 
 export default function TrajectoryView() {
+  const navigate = useNavigate()
   const [selected, setSelected] = useState<{ path: string; agent: LiveAgent } | null>(null)
   // 聚合接口：/api/trajectory（跨 claude + opencode）
   const merged = useQuery({
@@ -22,6 +23,12 @@ export default function TrajectoryView() {
     queryFn: () => api.trajectory(),
   })
   const entries = merged.data
+
+  // 返回上一页（从侧栏按钮进入时为对应 agent 页；直接打开则回 landing）
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate('/')
+  }
 
   const selectedResult = useQuery({
     queryKey: ['parse-from-path', selected?.path],
@@ -38,7 +45,10 @@ export default function TrajectoryView() {
     <div className="page shell">
       <aside className="sidebar">
         <div className="sidebar-main">
-          <Link className="btn" to="/">← 返回选择页</Link>
+          <button className="btn btn-primary" style={{ width: '100%' }} onClick={goBack}>
+            ← 返回上一页
+          </button>
+          <Link className="btn" to="/" style={{ width: '100%', marginTop: 6 }}>返回选择页</Link>
           <hr />
           <h3>📊 Trajectory 数据搜集</h3>
           <p className="muted">

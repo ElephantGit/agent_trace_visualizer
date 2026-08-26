@@ -524,6 +524,10 @@ if (agentsShown.length !== 1 || agentsShown[0] !== 'Opencode') {
   throw new Error(`agent filter should show only Opencode rows, got ${agentsShown}`)
 }
 console.log('17. trajectory aggregate + agent filter OK')
+// 返回上一页 → 回到来源 agent 页面
+await page.click('text=← 返回上一页')
+await page.waitForURL('**/claude-code')
+console.log('17b. trajectory back navigation OK')
 
 await browser.close()
 
