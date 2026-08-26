@@ -43,6 +43,20 @@ export default function ReplayView({
     [agent, rawEvents],
   )
 
+  // 注意：filtered 的 useMemo 必须在任何早退 return 之前声明——
+  // 切换工作流视图时早退会跳过其后的 hook，导致
+  // "Rendered fewer hooks than expected"（页面白屏）。
+  const filtered = useMemo(
+    () =>
+      model.events.filter(
+        (e) =>
+          !keyword ||
+          e.name.toLowerCase().includes(keyword.toLowerCase()) ||
+          e.tool_name.toLowerCase().includes(keyword.toLowerCase()),
+      ),
+    [model.events, keyword],
+  )
+
   const viewSwitch = (
     <div className="pills" style={{ margin: '6px 0' }}>
       <button className={`pill ${mode === 'replay' ? 'pill-active' : ''}`} onClick={() => setMode('replay')}>
@@ -62,17 +76,6 @@ export default function ReplayView({
       </div>
     )
   }
-
-  const filtered = useMemo(
-    () =>
-      model.events.filter(
-        (e) =>
-          !keyword ||
-          e.name.toLowerCase().includes(keyword.toLowerCase()) ||
-          e.tool_name.toLowerCase().includes(keyword.toLowerCase()),
-      ),
-    [model.events, keyword],
-  )
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
