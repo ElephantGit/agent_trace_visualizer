@@ -791,22 +791,46 @@ tbody tr:hover td { background: var(--surface-2); }
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  border: 1px solid var(--bad-border);
-  border-radius: 10px;
-  background: var(--bad-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
   margin-bottom: 10px;
   position: sticky;
   top: 8px;
   z-index: 10;
   box-shadow: var(--shadow-sm);
 }
+/* LIVE 状态徽章：小面积红点脉冲，替代整条红色横幅 */
+.live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bad-soft);
+  border: 1px solid var(--bad-border);
+  color: #991b1b;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex: 0 0 auto;
+}
+.live-chip-paused {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--muted);
+}
 .live-dot {
-  width: 10px;
-  height: 10px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--bad);
   animation: live-pulse 1.5s ease-in-out infinite;
   flex: 0 0 auto;
+}
+.live-chip-paused .live-dot {
+  background: var(--faint);
+  animation: none;
 }
 @keyframes live-pulse {
   0%, 100% { opacity: 1; }
