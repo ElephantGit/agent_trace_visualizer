@@ -408,8 +408,27 @@ await page.waitForSelector('.session-table', { timeout: 10000 })
 for (const col of ['会话', '状态', '最后活跃时间', '持续时间', 'Agent 数量', '目录']) {
   await page.waitForSelector(`.session-table th >> text=${col}`, { timeout: 10000 })
 }
+// 工具栏：搜索框 + 目录下拉 + 状态过滤 pills
+await page.waitForSelector('.session-search', { timeout: 10000 })
+await page.waitForSelector('.session-toolbar select', { timeout: 10000 })
+// 搜索无匹配 → 空态提示
+await page.fill('.session-search', 'zzz-no-such-session-xyz')
+await page.waitForSelector('text=没有匹配的会话', { timeout: 10000 })
+await page.fill('.session-search', '')
+// 状态过滤：点「已结束」→ 进行中徽章清零
+await page.click('.session-toolbar .pill:has-text("已结束")')
+await page.waitForTimeout(600)
+const liveBadges = await page.locator('.session-live-badge').count()
+if (liveBadges !== 0) throw new Error(`ended filter should hide active sessions, found ${liveBadges}`)
+// 排序：点持续时间表头 → 指示符切到 ▼
+await page.click('.session-sortable:has-text("持续时间")')
+await page.waitForFunction(() => {
+  const th = [...document.querySelectorAll('.session-sortable')].find((x) => x.textContent.includes('持续时间'))
+  return th?.textContent?.includes('▼') ?? false
+}, null, { timeout: 10000 })
+await page.click('.session-toolbar .pill:has-text("全部")')
 rmSync(LIVE_DIR, { recursive: true, force: true })
-console.log('14e. exit live -> session table OK + cleanup')
+console.log('14e. exit live -> session table + toolbar OK + cleanup')
 
 // ── 15. 实时监控自动跟随：新会话出现后自动切换监控目标 ──────────
 const FOLLOW_DIR = jn(hd(), '.claude/projects/e2e-live-follow')

@@ -66,7 +66,7 @@ export default function LiveMonitor({
           <option value="__auto__">🔄 自动跟随最新会话</option>
           {recent.map((t) => (
             <option key={t.path} value={t.path}>
-              <TraceLabel path={t.path} agent={agent} />
+              <TraceLabel path={t.path} agent={agent} name={t.name} />
             </option>
           ))}
         </select>

@@ -27,6 +27,13 @@ pub struct TraceEntry {
     pub mtime_ms: u64,
     #[serde(rename = "sizeBytes")]
     pub size_bytes: u64,
+    /// 可读会话名（头扫描提取；None = 未提取到）
+    pub name: Option<String>,
+    /// 会话所在目录（claude/opencode 的 cwd；None = 未知）
+    pub directory: Option<String>,
+    /// 会话运行时长（末事件 - 首事件时间戳；None = 无法计算）
+    #[serde(rename = "durationMs")]
+    pub duration_ms: Option<u64>,
 }
 
 fn default_root() -> std::path::PathBuf {
@@ -86,12 +93,32 @@ pub async fn traces_handler(
             path: path.to_string_lossy().into_owned(),
             mtime_ms,
             size_bytes: meta.len(),
+            name: None,
+            directory: None,
+            duration_ms: None,
         });
     }
 
     entries.sort_by_key(|e| std::cmp::Reverse(e.mtime_ms));
     // Cap at a generous bound; the frontend paginates the rest.
     entries.truncate(5000);
+    // 只对最近的前 300 个条目做轻量扫描（名称/目录/时长），避免大列表
+    // 全量读文件；更早的会话前端不回退为路径标签。
+    for e in entries.iter_mut().take(300) {
+        let path = Path::new(&e.path);
+        let scan = scan_head(path, is_opencode, 256 * 1024, false);
+        e.name = scan.name;
+        e.directory = scan.directory.or_else(|| {
+            path.parent()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+        });
+        let last_ts = scan_tail_ts(path);
+        e.duration_ms = match (scan.first_ts_ms, last_ts) {
+            (Some(a), Some(b)) if b >= a => Some(b - a),
+            _ => None,
+        };
+    }
     Ok(Json(entries))
 }
 
@@ -292,8 +319,9 @@ struct SessionScan {
     agent_count: u32,
 }
 
-/// 单次头扫描提取会话名/cwd/首时间戳/subagent 派发数。
-fn scan_head(path: &Path, is_opencode: bool) -> SessionScan {
+/// 单次头扫描提取会话名/cwd/首时间戳（可选统计 subagent 派发数）。
+/// cap 限制扫描字节数（会话列表用 256KB 轻扫；session-meta 用 2MB）。
+fn scan_head(path: &Path, is_opencode: bool, cap: usize, count_agents: bool) -> SessionScan {
     let mut out = SessionScan {
         name: None,
         directory: None,
@@ -307,7 +335,7 @@ fn scan_head(path: &Path, is_opencode: bool) -> SessionScan {
     let mut line = String::new();
     let mut scanned = 0usize;
     let mut oc_title: Option<String> = None;
-    while reader.read_line(&mut line).is_ok_and(|n| n > 0) && scanned < HEAD_SCAN_CAP {
+    while reader.read_line(&mut line).is_ok_and(|n| n > 0) && scanned < cap {
         scanned += line.len();
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -336,13 +364,16 @@ fn scan_head(path: &Path, is_opencode: bool) -> SessionScan {
                     .filter(|s| !s.is_empty())
                     .map(str::to_string);
             }
-            if v.get("type").and_then(|t| t.as_str()) == Some("tool.start")
+            if count_agents
+                && v.get("type").and_then(|t| t.as_str()) == Some("tool.start")
                 && v.get("tool").and_then(|t| t.as_str()) == Some("task")
             {
                 out.agent_count += 1;
             }
         } else {
-            out.agent_count += count_claude_dispatch(&v);
+            if count_agents {
+                out.agent_count += count_claude_dispatch(&v);
+            }
             if out.name.is_none() {
                 if v.get("type").and_then(|t| t.as_str()) == Some("user") {
                     let msg = v.get("message").unwrap_or(&v);
@@ -416,7 +447,7 @@ pub async fn session_meta_handler(
         ));
     }
     let is_opencode = q.agent.as_deref() == Some("opencode");
-    let head = scan_head(Path::new(&q.path), is_opencode);
+    let head = scan_head(Path::new(&q.path), is_opencode, HEAD_SCAN_CAP, true);
     let last_ts = scan_tail_ts(Path::new(&q.path));
     let duration_ms = match (head.first_ts_ms, last_ts) {
         (Some(a), Some(b)) if b >= a => Some(b - a),
@@ -460,7 +491,7 @@ mod tests {
             "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"你好\"},\"cwd\":\"/home/u/proj\",\"timestamp\":\"2026-01-01T10:00:00Z\",\"uuid\":\"a\"}\n\
              {\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"task\",\"input\":{}},{\"type\":\"tool_use\",\"id\":\"t2\",\"name\":\"Bash\",\"input\":{}}]},\"timestamp\":\"2026-01-01T10:00:02Z\",\"uuid\":\"b\"}\n",
         );
-        let s = scan_head(&p, false);
+        let s = scan_head(&p, false, HEAD_SCAN_CAP, true);
         assert_eq!(s.name.as_deref(), Some("你好"));
         assert_eq!(s.directory.as_deref(), Some("/home/u/proj"));
         assert_eq!(s.agent_count, 1); // 只有 task 计入
@@ -477,7 +508,7 @@ mod tests {
              {\"type\":\"tool.start\",\"ts\":2000,\"tool\":\"task\",\"toolCallId\":\"a\"}\n\
              {\"type\":\"tool.start\",\"ts\":3000,\"tool\":\"bash\",\"toolCallId\":\"b\"}\n",
         );
-        let s = scan_head(&p, true);
+        let s = scan_head(&p, true, HEAD_SCAN_CAP, true);
         assert_eq!(s.name.as_deref(), Some("标题"));
         assert_eq!(s.directory.as_deref(), Some("/home/u/oc"));
         assert_eq!(s.agent_count, 1); // 只有 task 计入
@@ -493,7 +524,7 @@ mod tests {
             "meta-nodur",
             "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"},\"timestamp\":\"2026-01-01T10:00:00Z\",\"uuid\":\"a\"}\n",
         );
-        let head = scan_head(&p, false);
+        let head = scan_head(&p, false, HEAD_SCAN_CAP, true);
         assert_eq!(
             match (head.first_ts_ms, scan_tail_ts(&p)) {
                 (Some(a), Some(b)) if b >= a => Some(b - a),

@@ -872,6 +872,21 @@ tbody tr:hover td { background: var(--surface-2); }
   border: 1px solid var(--ok-border);
   white-space: nowrap;
 }
+/* 会话列表工具栏（搜索 / 目录过滤 / 状态过滤） */
+.session-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.session-search { flex: 1 1 220px; min-width: 180px; }
+.session-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.session-sortable:hover { color: var(--accent); }
 
 /* ── Agent 切换器（各页面左下角固定）────────────────────────── */
 

@@ -17,9 +17,18 @@ export function shortTraceId(path: string): string {
   return stem.length > 13 ? `${stem.slice(0, 13)}…` : stem
 }
 
-export default function TraceLabel({ path, agent }: { path: string; agent: LiveAgent }) {
-  const { data } = useTraceName(path, agent)
-  const name = data?.name
+export default function TraceLabel({
+  path,
+  agent,
+  name: knownName,
+}: {
+  path: string
+  agent: LiveAgent
+  /// 已知会话名（如 /api/traces 已返回）——命中时不再发起查询
+  name?: string | null
+}) {
+  const { data } = useTraceName(knownName != null ? null : path, agent)
+  const name = knownName ?? data?.name
   if (name) return <>{`${name} · ${shortTraceId(path)}`}</>
   return <>{shortTraceLabel(path)}</>
 }

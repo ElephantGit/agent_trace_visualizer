@@ -90,6 +90,12 @@ export interface TraceEntry {
   path: string
   mtimeMs: number
   sizeBytes: number
+  /// 可读会话名（后端头扫描提取；null = 未提取到）
+  name?: string | null
+  /// 会话所在目录（cwd）
+  directory?: string | null
+  /// 会话运行时长（毫秒）
+  durationMs?: number | null
 }
 
 export interface MermaidResponse {
