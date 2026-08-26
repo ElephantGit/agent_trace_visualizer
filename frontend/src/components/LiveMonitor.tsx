@@ -48,11 +48,13 @@ export default function LiveMonitor({
   return (
     <div>
       <div className="live-banner">
-        <span className="live-dot" />
+        <span className={`live-chip ${paused ? 'live-chip-paused' : ''}`}>
+          <span className="live-dot" />
+          {paused ? '已暂停' : 'LIVE'}
+        </span>
         <span className="live-title">
-          LIVE · {path?.split('/').pop()} · {model.events.length} 个事件 ·{' '}
+          {path?.split('/').pop()} · {model.events.length} 个事件 ·{' '}
           {LIVE_STATUS_LABEL[status] ?? status}
-          {paused ? ' · 已暂停' : ''}
         </span>
         <select
           className="pill-input"
@@ -66,7 +68,7 @@ export default function LiveMonitor({
           <option value="__auto__">🔄 自动跟随最新会话</option>
           {recent.map((t) => (
             <option key={t.path} value={t.path}>
-              <TraceLabel path={t.path} agent={agent} />
+              <TraceLabel path={t.path} agent={agent} name={t.name} />
             </option>
           ))}
         </select>

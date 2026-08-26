@@ -90,32 +90,14 @@ export interface TraceEntry {
   path: string
   mtimeMs: number
   sizeBytes: number
-}
-
-export interface ReplayStep {
-  seq: number
-  category: string
-  title: string
-  content: string
-  detail: Record<string, unknown>
-  turn_no: number
-  is_error: boolean
-}
-
-export interface CategoryStyle {
-  label: string
-  icon: string
-  bg: string
-  header_bg: string
-  border: string
-  text: string
-}
-
-export interface ReplayResponse {
-  steps: ReplayStep[]
-  pageSize: number
-  contentMaxLength: number
-  categories: [string, CategoryStyle][]
+  /// 可读会话名（后端头扫描提取；null = 未提取到）
+  name?: string | null
+  /// 会话所在目录（cwd）
+  directory?: string | null
+  /// 会话运行时长（毫秒）
+  durationMs?: number | null
+  /// 所属 agent（trajectory 聚合接口返回；单 agent 列表无此字段）
+  agent?: string
 }
 
 export interface MermaidResponse {

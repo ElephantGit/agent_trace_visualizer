@@ -46,8 +46,8 @@ console.log('1. landing OK')
 // ── 2. Opencode standalone: upload → parse → tabs ─────────────
 await page.click('text=Opencode 可视化')
 await page.waitForURL('**/opencode')
-await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
-await page.click('text=上传文件') // 文件面板默认是会话记录列表，切到上传
+await page.click('text=📁 会话列表') // 默认进入实时监控，需先切到文件模式
+await page.click('text=📤 上传文件分析') // 展开上传区域
 await page.setInputFiles('input[type=file]', `${FIX}/sample_opencode.ndjson`)
 await page.waitForSelector('text=会话回放', { timeout: 15000 })
 await page.waitForSelector('.step-card', { timeout: 15000 })
@@ -132,8 +132,8 @@ console.log(`5c. opencode token trend OK (${ocTrendPoints} points, per-step cach
 
 // ── 6. Claude Code upload (transcript) ────────────────────────
 await page.goto(`${BASE}/claude-code`)
-await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
-await page.click('text=上传文件')
+await page.click('text=📁 会话列表') // 默认进入实时监控，需先切到文件模式
+await page.click('text=📤 上传文件分析')
 await page.setInputFiles('input[type=file]', `${FIX}/sample_claude_code_transcript.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
 await page.waitForSelector('.step-card', { timeout: 15000 })
@@ -277,8 +277,8 @@ const exclLines = [
 writeFileSync(`${OUT}/excludes_cache.jsonl`, exclLines.join('\n') + '\n')
 
 await page.goto(`${BASE}/claude-code`)
-await page.click('text=📁 文件模式')
-await page.click('text=上传文件')
+await page.click('text=📁 会话列表')
+await page.click('text=📤 上传文件分析')
 await page.setInputFiles('input[type=file]', `${OUT}/excludes_cache.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
 await page.click('text=Token 趋势')
@@ -336,6 +336,14 @@ await page.goto(`${BASE}/opencode`)
 await page.waitForSelector('text=Opencode')
 console.log('13. SPA fallback route OK')
 
+// ── 13b. Agent 切换器（各可视化页面左下角固定）──────────────────
+await page.click('.agent-switcher a[href="/gemini"]')
+await page.waitForURL('**/gemini')
+await page.waitForSelector('.agent-switcher .agent-switch-active >> text=Gemini', { timeout: 10000 })
+await page.click('.agent-switcher a[href="/opencode"]')
+await page.waitForURL('**/opencode')
+console.log('13b. agent switcher (bottom-left) OK')
+
 // ── 14. 实时监控（SSE 推送 + 暂停/恢复 + 退出）────────────────
 import { appendFileSync, rmSync, writeFileSync as wf } from 'node:fs'
 import { homedir as hd } from 'node:os'
@@ -392,11 +400,35 @@ await page.click('text=▶ 恢复')
 await page.waitForFunction(() => document.querySelectorAll('.wf-row').length === 5, null, { timeout: 10000 })
 console.log('14d. resume catches up OK (5 rows)')
 
-// 退出实时 → 切换到文件模式（主区域显示文件选择面板）
+// 退出实时 → 切换到文件模式（主区域显示会话列表表格）
 await page.click('text=退出实时')
 await page.waitForSelector('text=扫描 ~/.claude/projects 下的 transcript JSONL', { timeout: 10000 })
+await page.waitForSelector('.session-table', { timeout: 10000 })
+// 表格列头齐全（会话/状态/最后活跃时间/持续时间/Agent 数量/目录）
+for (const col of ['会话', '状态', '最后活跃时间', '持续时间', 'Agent 数量', '目录']) {
+  await page.waitForSelector(`.session-table th >> text=${col}`, { timeout: 10000 })
+}
+// 工具栏：搜索框 + 目录下拉 + 状态过滤 pills
+await page.waitForSelector('.session-search', { timeout: 10000 })
+await page.waitForSelector('.session-toolbar select', { timeout: 10000 })
+// 搜索无匹配 → 空态提示
+await page.fill('.session-search', 'zzz-no-such-session-xyz')
+await page.waitForSelector('text=没有匹配的会话', { timeout: 10000 })
+await page.fill('.session-search', '')
+// 状态过滤：点「已结束」→ 进行中徽章清零
+await page.click('.session-toolbar .pill:has-text("已结束")')
+await page.waitForTimeout(600)
+const liveBadges = await page.locator('.session-live-badge').count()
+if (liveBadges !== 0) throw new Error(`ended filter should hide active sessions, found ${liveBadges}`)
+// 排序：点持续时间表头 → 指示符切到 ▼
+await page.click('.session-sortable:has-text("持续时间")')
+await page.waitForFunction(() => {
+  const th = [...document.querySelectorAll('.session-sortable')].find((x) => x.textContent.includes('持续时间'))
+  return th?.textContent?.includes('▼') ?? false
+}, null, { timeout: 10000 })
+await page.click('.session-toolbar .pill:has-text("全部")')
 rmSync(LIVE_DIR, { recursive: true, force: true })
-console.log('14e. exit live -> file mode OK + cleanup')
+console.log('14e. exit live -> session table + toolbar OK + cleanup')
 
 // ── 15. 实时监控自动跟随：新会话出现后自动切换监控目标 ──────────
 const FOLLOW_DIR = jn(hd(), '.claude/projects/e2e-live-follow')
@@ -461,11 +493,41 @@ console.log('16b. opencode live append grows rows OK')
 // 退出实时 → 文件模式面板
 await page.click('text=退出实时')
 await page.waitForSelector('text=扫描 ~/.local/share/opencode/trace 下的 ndjson', { timeout: 10000 })
+// 点击会话行 → 只显示详情 + 返回按钮；返回后列表恢复
+await page.click('.session-table tbody tr >> nth=0')
+await page.waitForSelector('.tabs', { timeout: 30000 })
+const tableHidden = await page.locator('.session-table').count()
+if (tableHidden !== 0) throw new Error('session table should be hidden in detail mode')
+await page.click('text=← 返回会话列表')
+await page.waitForSelector('.session-table', { timeout: 10000 })
+console.log('16c. session detail / back-to-list flow OK')
 // 切回实时模式
-await page.click('text=🔴 实时监控模式')
+await page.click('text=🔴 Live')
 await page.waitForSelector('.live-banner', { timeout: 15000 })
-console.log('16c. opencode live/file mode toggle OK')
+console.log('16d. opencode live/file mode toggle OK')
 rmSync(OC_LIVE_FILE, { force: true })
+
+// ── 17. Trajectory 聚合页（跨 agent 会话 + 筛选）────────────────
+await page.goto(`${BASE}/claude-code`)
+await page.waitForSelector('.live-banner', { timeout: 15000 })
+await page.click('text=📊 Trajectory 数据搜集')
+await page.waitForURL('**/trajectory')
+await page.waitForSelector('.session-table', { timeout: 15000 })
+// Agent 列 + agent 过滤 chips
+await page.waitForSelector('.session-table th >> text=Agent', { timeout: 10000 })
+await page.waitForSelector('.session-toolbar .pill:has-text("Claude Code")', { timeout: 10000 })
+// 过滤到仅 Opencode → Agent 列只剩 Opencode
+await page.click('.session-toolbar .pill:has-text("Opencode")')
+await page.waitForTimeout(800)
+const agentsShown = await page.evaluate(() => [...new Set([...document.querySelectorAll('.session-row .session-agent')].map((c) => c.textContent))])
+if (agentsShown.length !== 1 || agentsShown[0] !== 'Opencode') {
+  throw new Error(`agent filter should show only Opencode rows, got ${agentsShown}`)
+}
+console.log('17. trajectory aggregate + agent filter OK')
+// 返回上一页 → 回到来源 agent 页面
+await page.click('text=← 返回上一页')
+await page.waitForURL('**/claude-code')
+console.log('17b. trajectory back navigation OK')
 
 await browser.close()
 

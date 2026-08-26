@@ -339,15 +339,25 @@ tbody tr:hover td { background: var(--surface-2); }
 .shell { display: flex; gap: 20px; align-items: flex-start; }
 .sidebar {
   flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
   position: sticky;
   top: 12px;
-  max-height: calc(100dvh - 24px);
-  overflow-y: auto;
+  /* 固定高度：上半部（Live/会话列表等）可滚动，底部 agent 切换器常驻 */
+  height: calc(100dvh - 24px);
+  overflow: hidden;
   box-shadow: var(--shadow-sm);
+}
+/* 上半部内容区：占满剩余空间，内容超出时自身滚动 */
+.sidebar-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 .main { flex: 1; min-width: 0; }
 
@@ -599,6 +609,31 @@ tbody tr:hover td { background: var(--surface-2); }
   transition: filter 0.15s ease;
 }
 .step-card > summary:hover { filter: brightness(0.97); }
+
+/* 会话回放：轮次区隔 + 三类信息卡片（与时间轴同源） */
+.rp-turn-sep {
+  margin: 14px 0 8px;
+  padding: 5px 12px;
+  font-size: 0.86em;
+  font-weight: 600;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid #c6dafc;
+  border-radius: 8px;
+}
+.step-card.rp-user > summary { background: #f1f5f9; color: #334155; border-left-color: #64748b; }
+.step-card.rp-llm > summary { background: var(--accent-soft); color: #1e40af; border-left-color: var(--accent); }
+.step-card.rp-tool > summary { background: var(--ok-soft); color: #166534; border-left-color: var(--ok); }
+.rp-kind-icon { margin-right: 6px; font-size: 1.1em; }
+.rp-kind-label {
+  margin-left: 6px;
+  font-size: 0.72em;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--muted);
+}
 .step-card[open] > summary { border-radius: 10px 10px 0 0; }
 .step-card .step-body { padding: 12px 16px; }
 .step-card .seq-no { font-weight: 400; font-size: 0.8em; min-width: 28px; }
@@ -756,22 +791,46 @@ tbody tr:hover td { background: var(--surface-2); }
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  border: 1px solid var(--bad-border);
-  border-radius: 10px;
-  background: var(--bad-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
   margin-bottom: 10px;
   position: sticky;
   top: 8px;
   z-index: 10;
   box-shadow: var(--shadow-sm);
 }
+/* LIVE 状态徽章：小面积红点脉冲，替代整条红色横幅 */
+.live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bad-soft);
+  border: 1px solid var(--bad-border);
+  color: #991b1b;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex: 0 0 auto;
+}
+.live-chip-paused {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--muted);
+}
 .live-dot {
-  width: 10px;
-  height: 10px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--bad);
   animation: live-pulse 1.5s ease-in-out infinite;
   flex: 0 0 auto;
+}
+.live-chip-paused .live-dot {
+  background: var(--faint);
+  animation: none;
 }
 @keyframes live-pulse {
   0%, 100% { opacity: 1; }
@@ -814,6 +873,85 @@ tbody tr:hover td { background: var(--surface-2); }
   max-height: 220px;
   overflow-y: auto;
   margin-top: 8px;
+}
+
+/* ── 会话列表表格（文件模式）────────────────────────────────── */
+
+.session-table { table-layout: fixed; }
+.session-table th:nth-child(1) { width: 30%; }
+.session-table th:nth-child(2) { width: 9%; }
+.session-table th:nth-child(3) { width: 15%; }
+.session-table th:nth-child(4) { width: 11%; }
+.session-table th:nth-child(5) { width: 9%; }
+.session-table th:nth-child(6) { width: 26%; }
+.session-row { cursor: pointer; }
+.session-row:hover td { background: var(--surface-2); }
+.session-row-selected td {
+  background: var(--accent-soft);
+  font-weight: 500;
+}
+.session-name { font-weight: 500; }
+.session-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.session-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0; /* table-layout: fixed 下配合溢出省略 */
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.session-live-badge {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border: 1px solid var(--ok-border);
+  white-space: nowrap;
+}
+/* 会话列表工具栏（搜索 / 目录过滤 / 状态过滤） */
+.session-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.session-search { flex: 1 1 220px; min-width: 180px; }
+.session-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.session-sortable:hover { color: var(--accent); }
+
+/* ── Agent 切换器（侧栏底部，与 Live/会话列表按钮对齐）─────── */
+
+.agent-switcher {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.agent-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.88em;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.agent-switch-btn:hover { background: var(--surface-2); color: var(--text); }
+.agent-switch-active {
+  background: var(--accent-soft);
+  border-color: #c6dafc;
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 .wf-row-live { animation: live-flash 2.5s ease-out; }
 @keyframes live-flash {

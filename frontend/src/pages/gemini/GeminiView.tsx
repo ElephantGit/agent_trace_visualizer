@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ParseResult } from '../../api/types'
 import { useMermaid, useParse } from '../../hooks'
+import AgentSwitcher from '../../components/AgentSwitcher'
 import Plot from '../../components/Plot'
 import MermaidView from '../../components/MermaidView'
 import { Tabs, DataTable, DebugJson, Expander, ErrorBanner, FileUpload, Info } from '../../components/ui/primitives'
@@ -57,21 +58,30 @@ export default function GeminiView() {
   return (
     <div className="page shell">
       <aside className="sidebar">
-        <Link className="btn" to="/">← 返回选择页</Link>
-        <hr />
-        <h3>Gemini CLI</h3>
-        <FileUpload
-          label="上传 telemetry.log"
-          onFile={(buf, n) => {
-            setContent(buf)
-            setName(n)
-          }}
-        />
-        {name && <p className="muted">已加载：{name}</p>}
-        {error && <ErrorBanner>{String(error)}</ErrorBanner>}
-        <p className="muted">
-          GEMINI_TELEMETRY_TRACES_ENABLED 生成的 telemetry.log（拼接 JSON 对象格式）
-        </p>
+        {/* 上半部：页面内容（可滚动） */}
+        <div className="sidebar-main">
+          <Link className="btn" to="/">← 返回选择页</Link>
+          <hr />
+          <h3>Gemini CLI</h3>
+          <FileUpload
+            label="上传 telemetry.log"
+            onFile={(buf, n) => {
+              setContent(buf)
+              setName(n)
+            }}
+          />
+          {name && <p className="muted">已加载：{name}</p>}
+          {error && <ErrorBanner>{String(error)}</ErrorBanner>}
+          <p className="muted">
+            GEMINI_TELEMETRY_TRACES_ENABLED 生成的 telemetry.log（拼接 JSON 对象格式）
+          </p>
+          <hr />
+          <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
+            📊 Trajectory 数据搜集
+          </Link>
+        </div>
+        {/* 下半部：agent 切换（常驻底部） */}
+        <AgentSwitcher />
       </aside>
       <div className="main" id="main">
         {isLoading && <p className="muted">解析中…</p>}

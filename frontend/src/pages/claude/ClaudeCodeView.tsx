@@ -7,8 +7,9 @@ import { Link } from 'react-router-dom'
 import { useParse, useTraces } from '../../hooks'
 import { api } from '../../api/client'
 import LiveMonitor from '../../components/LiveMonitor'
-import TraceLabel from '../../components/TraceLabel'
-import { FileUpload, ErrorBanner, Info, Pills } from '../../components/ui/primitives'
+import SessionTable from '../../components/SessionTable'
+import AgentSwitcher from '../../components/AgentSwitcher'
+import { FileUpload, ErrorBanner, Info } from '../../components/ui/primitives'
 import type { AgentType, ParseResult, TraceEntry } from '../../api/types'
 import ClaudeBody from './ClaudeBody'
 import { useQuery } from '@tanstack/react-query'
@@ -72,36 +73,45 @@ export default function ClaudeCodeView() {
   return (
     <div className="page shell">
       <aside className="sidebar">
-        <Link className="btn" to="/">← 返回选择页</Link>
-        <hr />
-        <h3>Claude Code</h3>
-        {/* 模式切换：默认实时监控 */}
-        <button
-          className={`btn ${pageMode === 'live' ? 'btn-primary' : ''}`}
-          style={{ width: '100%' }}
-          onClick={enterLive}
-        >
-          🔴 实时监控模式
-        </button>
-        <button
-          className={`btn ${pageMode === 'file' ? 'btn-primary' : ''}`}
-          style={{ width: '100%', marginTop: 6 }}
-          onClick={enterFile}
-        >
-          📁 文件模式
-        </button>
-        <hr />
-        {pageMode === 'live' ? (
-          <>
-            <p className="muted">
-              监控当前正在进行的会话（自动定位 ~/.claude/projects 下最近活跃的 transcript）。
-            </p>
-            {liveError && <p className="muted" style={{ color: '#991b1b' }}>{liveError}</p>}
-          </>
-        ) : (
-          <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
-        )}
-        {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
+        {/* 上半部：Live / 会话列表模式切换 + 说明（内容可滚动） */}
+        <div className="sidebar-main">
+          <Link className="btn" to="/">← 返回选择页</Link>
+          <hr />
+          <h3>Claude Code</h3>
+          {/* 模式切换：默认实时监控 */}
+          <button
+            className={`btn ${pageMode === 'live' ? 'btn-primary' : ''}`}
+            style={{ width: '100%' }}
+            onClick={enterLive}
+          >
+            🔴 Live
+          </button>
+          <button
+            className={`btn ${pageMode === 'file' ? 'btn-primary' : ''}`}
+            style={{ width: '100%', marginTop: 6 }}
+            onClick={enterFile}
+          >
+            📁 会话列表
+          </button>
+          <hr />
+          {pageMode === 'live' ? (
+            <>
+              <p className="muted">
+                监控当前正在进行的会话（自动定位 ~/.claude/projects 下最近活跃的 transcript）。
+              </p>
+              {liveError && <p className="muted" style={{ color: '#991b1b' }}>{liveError}</p>}
+            </>
+          ) : (
+            <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
+          )}
+          {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
+          <hr />
+          <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
+            📊 Trajectory 数据搜集
+          </Link>
+        </div>
+        {/* 下半部：agent 切换（常驻底部） */}
+        <AgentSwitcher />
       </aside>
       <div className="main" id="main">
         {pageMode === 'live' ? (
@@ -111,7 +121,7 @@ export default function ClaudeCodeView() {
             <div>
               <Info>未找到正在进行的会话（~/.claude/projects 下没有最近活跃的 transcript）。</Info>
               <p className="muted">
-                可以先切换到「📁 文件模式」查看历史记录；或先启动一个 Claude Code 会话后再重试。
+                可以先切换到「📁 会话列表」查看历史记录；或先启动一个 Claude Code 会话后再重试。
               </p>
               <button className="btn" onClick={startLive}>🔄 重新定位</button>
             </div>
@@ -120,59 +130,62 @@ export default function ClaudeCodeView() {
           )
         ) : (
           <>
-            {/* 文件选择面板（主区域，不再占用左侧栏） */}
-            <div className="file-panel">
-              <Pills
-                options={['交互会话记录', '上传文件']}
-                selected={[loadMode === 'browse' ? '交互会话记录' : '上传文件']}
-                onChange={(next) => {
-                  setLoadMode(next[0] === '上传文件' ? 'upload' : 'browse')
-                }}
-              />
-              {loadMode === 'browse' ? (
-                <div>
-                  <p className="muted">扫描 ~/.claude/projects 下的 transcript JSONL（按修改时间倒序）</p>
-                  {traces.isLoading && <p className="muted">扫描中…</p>}
-                  {sorted.length === 0 && !traces.isLoading && (
-                    <Info>未找到 transcript 文件。</Info>
-                  )}
-                  <div className="trace-grid">
-                    {sorted.slice(0, 200).map((t: TraceEntry) => (
-                      <button
-                        key={t.path}
-                        className={`btn trace-btn ${t.path === selectedPath ? 'btn-primary' : ''}`}
-                        title={t.path}
-                        onClick={() => setSelectedPath(t.path)}
-                      >
-                        <TraceLabel path={t.path} agent="claude_code" />
-                      </button>
-                    ))}
-                  </div>
-                  {sorted.length > 200 && <p className="muted">… 仅显示前 200 个</p>}
-                </div>
-              ) : (
-                <div>
-                  <FileUpload
-                    label="上传 stream-json 或 transcript JSONL"
-                    onFile={(buf, n) => {
-                      setContent(buf)
-                      setName(n)
+            {selectedPath || content ? (
+              // 会话详情模式：只显示详情 + 返回按钮
+              <>
+                <button
+                  className="btn"
+                  style={{ marginBottom: 12 }}
+                  onClick={() => {
+                    setSelectedPath(null)
+                    setContent(null)
+                    setName('')
+                    setLoadMode('browse')
+                  }}
+                >
+                  ← 返回会话列表
+                </button>
+                {isLoading && <p className="muted">解析中…</p>}
+                {error && <ErrorBanner>{String(error)}</ErrorBanner>}
+                {result && <ClaudeBody result={result} />}
+              </>
+            ) : (
+              // 会话列表面板（主区域）：点击行加载该会话详情
+              <div className="file-panel">
+                <p className="muted">扫描 ~/.claude/projects 下的 transcript JSONL（按修改时间倒序）</p>
+                {traces.isLoading && <p className="muted">扫描中…</p>}
+                {!traces.isLoading && (
+                  <SessionTable
+                    agent="claude_code"
+                    traces={sorted.slice(0, 200)}
+                    selected={selectedPath}
+                    onSelect={(p) => {
+                      setLoadMode('browse')
+                      setSelectedPath(p)
                     }}
                   />
-                  {name && <p className="muted">已加载：{name}</p>}
-                  <p className="muted" style={{ marginTop: 10 }}>
-                    快速生成 stream-json：
-                  </p>
-                  <pre className="debug-json">{'claude --output-format stream-json \\\n  -p "你的任务描述" \\\n  > claude_trace.ndjson'}</pre>
-                </div>
-              )}
-            </div>
-            {isLoading && <p className="muted">解析中…</p>}
-            {result && <ClaudeBody result={result} />}
-            {!result && !isLoading && (
-              <p className="muted">
-                {loadMode === 'browse' ? '请选择一个 transcript 文件。' : '请先上传一个 trace 文件。'}
-              </p>
+                )}
+                {sorted.length > 200 && <p className="muted">… 仅显示前 200 个</p>}
+
+                <details className="step-fold" style={{ marginTop: 12 }}>
+                  <summary className="step-fold-summary">📤 上传文件分析</summary>
+                  <div>
+                    <FileUpload
+                      label="上传 stream-json 或 transcript JSONL"
+                      onFile={(buf, n) => {
+                        setLoadMode('upload')
+                        setContent(buf)
+                        setName(n)
+                      }}
+                    />
+                    {name && <p className="muted">已加载：{name}</p>}
+                    <p className="muted" style={{ marginTop: 10 }}>
+                      快速生成 stream-json：
+                    </p>
+                    <pre className="debug-json">{'claude --output-format stream-json \\\n  -p "你的任务描述" \\\n  > claude_trace.ndjson'}</pre>
+                  </div>
+                </details>
+              </div>
             )}
           </>
         )}

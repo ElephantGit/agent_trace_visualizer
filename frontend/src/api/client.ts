@@ -6,7 +6,6 @@ import type {
   EmbeddedResponse,
   MermaidResponse,
   ParseResult,
-  ReplayResponse,
   TraceEntry,
   WorkflowNode,
 } from './types'
@@ -60,13 +59,6 @@ export const api = {
   subagent: (sessionId: string) =>
     request<ParseResult>(`/api/subagent/${encodeURIComponent(sessionId)}`, { method: 'POST' }),
 
-  replay: (source: 'opencode' | 'claude_code', rawEvents: unknown[]) =>
-    request<ReplayResponse>('/api/derive/replay', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ source, rawEvents }),
-    }),
-
   mermaid: (req: {
     kind: string
     rawEvents?: unknown[]
@@ -101,6 +93,20 @@ export const api = {
   traceName: (path: string, agent?: 'claude_code' | 'opencode') =>
     request<{ name: string | null }>(
       `/api/trace-name?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
+    ),
+
+  trajectory: () => request<TraceEntry[]>('/api/trajectory'),
+
+  sessionMeta: (path: string, agent?: 'claude_code' | 'opencode') =>
+    request<{
+      name: string | null
+      active: boolean
+      lastActiveMs: number
+      durationMs: number | null
+      agentCount: number
+      directory: string | null
+    }>(
+      `/api/session-meta?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
     ),
 
   liveLatest: (agent?: 'claude_code' | 'opencode') =>
