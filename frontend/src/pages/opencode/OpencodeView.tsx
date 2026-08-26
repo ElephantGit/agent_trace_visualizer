@@ -123,44 +123,58 @@ export default function OpencodeView() {
           )
         ) : (
           <>
-            {/* 会话列表面板（主区域）：点击行加载该会话详情 */}
-            <div className="file-panel">
-              <p className="muted">扫描 ~/.local/share/opencode/trace 下的 ndjson（按修改时间倒序）</p>
-              {traces.isLoading && <p className="muted">扫描中…</p>}
-              {!traces.isLoading && (
-                <SessionTable
-                  agent="opencode"
-                  traces={sorted.slice(0, 200)}
-                  selected={selectedPath}
-                  onSelect={(p) => {
+            {selectedPath || content ? (
+              // 会话详情模式：只显示详情 + 返回按钮
+              <>
+                <button
+                  className="btn"
+                  style={{ marginBottom: 12 }}
+                  onClick={() => {
+                    setSelectedPath(null)
+                    setContent(null)
+                    setName('')
                     setLoadMode('browse')
-                    setSelectedPath(p)
                   }}
-                />
-              )}
-              {sorted.length > 200 && <p className="muted">… 仅显示前 200 个</p>}
-
-              <details className="step-fold" style={{ marginTop: 12 }}>
-                <summary className="step-fold-summary">📤 上传文件分析</summary>
-                <div>
-                  <FileUpload
-                    label="上传 trace-logger 生成的 .ndjson 文件"
-                    onFile={(buf, n) => {
-                      setLoadMode('upload')
-                      setContent(buf)
-                      setName(n)
+                >
+                  ← 返回会话列表
+                </button>
+                {isLoading && <p className="muted">解析中…</p>}
+                {error && <ErrorBanner>{String(error)}</ErrorBanner>}
+                {result && <OpencodeBody result={result} />}
+              </>
+            ) : (
+              // 会话列表面板（主区域）：点击行加载该会话详情
+              <div className="file-panel">
+                <p className="muted">扫描 ~/.local/share/opencode/trace 下的 ndjson（按修改时间倒序）</p>
+                {traces.isLoading && <p className="muted">扫描中…</p>}
+                {!traces.isLoading && (
+                  <SessionTable
+                    agent="opencode"
+                    traces={sorted.slice(0, 200)}
+                    selected={selectedPath}
+                    onSelect={(p) => {
+                      setLoadMode('browse')
+                      setSelectedPath(p)
                     }}
                   />
-                  {name && <p className="muted">已加载：{name}</p>}
-                </div>
-              </details>
-            </div>
-            {isLoading && <p className="muted">解析中…</p>}
-            {result && <OpencodeBody result={result} />}
-            {!result && !isLoading && (
-              <p className="muted">
-                {loadMode === 'browse' ? '点击上方会话列表中的某一行查看详细信息。' : '请先上传一个 .ndjson trace 文件。'}
-              </p>
+                )}
+                {sorted.length > 200 && <p className="muted">… 仅显示前 200 个</p>}
+
+                <details className="step-fold" style={{ marginTop: 12 }}>
+                  <summary className="step-fold-summary">📤 上传文件分析</summary>
+                  <div>
+                    <FileUpload
+                      label="上传 trace-logger 生成的 .ndjson 文件"
+                      onFile={(buf, n) => {
+                        setLoadMode('upload')
+                        setContent(buf)
+                        setName(n)
+                      }}
+                    />
+                    {name && <p className="muted">已加载：{name}</p>}
+                  </div>
+                </details>
+              </div>
             )}
           </>
         )}

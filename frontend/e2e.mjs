@@ -474,10 +474,18 @@ console.log('16b. opencode live append grows rows OK')
 // 退出实时 → 文件模式面板
 await page.click('text=退出实时')
 await page.waitForSelector('text=扫描 ~/.local/share/opencode/trace 下的 ndjson', { timeout: 10000 })
+// 点击会话行 → 只显示详情 + 返回按钮；返回后列表恢复
+await page.click('.session-table tbody tr >> nth=0')
+await page.waitForSelector('.tabs', { timeout: 30000 })
+const tableHidden = await page.locator('.session-table').count()
+if (tableHidden !== 0) throw new Error('session table should be hidden in detail mode')
+await page.click('text=← 返回会话列表')
+await page.waitForSelector('.session-table', { timeout: 10000 })
+console.log('16c. session detail / back-to-list flow OK')
 // 切回实时模式
 await page.click('text=🔴 实时监控模式')
 await page.waitForSelector('.live-banner', { timeout: 15000 })
-console.log('16c. opencode live/file mode toggle OK')
+console.log('16d. opencode live/file mode toggle OK')
 rmSync(OC_LIVE_FILE, { force: true })
 
 await browser.close()
