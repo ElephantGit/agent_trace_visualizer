@@ -339,6 +339,8 @@ tbody tr:hover td { background: var(--surface-2); }
 .shell { display: flex; gap: 20px; align-items: flex-start; }
 .sidebar {
   flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -888,31 +890,27 @@ tbody tr:hover td { background: var(--surface-2); }
 }
 .session-sortable:hover { color: var(--accent); }
 
-/* ── Agent 切换器（各页面左下角固定）────────────────────────── */
+/* ── Agent 切换器（侧栏底部，与 Live/会话列表按钮对齐）─────── */
 
 .agent-switcher {
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
-  z-index: 20;
+  margin-top: auto;
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  padding: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-md);
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 .agent-switch-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border-radius: 7px;
-  font-size: 0.82em;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.88em;
   color: var(--muted);
   text-decoration: none;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
+  background: var(--surface);
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .agent-switch-btn:hover { background: var(--surface-2); color: var(--text); }

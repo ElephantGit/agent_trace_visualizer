@@ -46,7 +46,7 @@ console.log('1. landing OK')
 // ── 2. Opencode standalone: upload → parse → tabs ─────────────
 await page.click('text=Opencode 可视化')
 await page.waitForURL('**/opencode')
-await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
+await page.click('text=📁 会话列表') // 默认进入实时监控，需先切到文件模式
 await page.click('text=📤 上传文件分析') // 展开上传区域
 await page.setInputFiles('input[type=file]', `${FIX}/sample_opencode.ndjson`)
 await page.waitForSelector('text=会话回放', { timeout: 15000 })
@@ -132,7 +132,7 @@ console.log(`5c. opencode token trend OK (${ocTrendPoints} points, per-step cach
 
 // ── 6. Claude Code upload (transcript) ────────────────────────
 await page.goto(`${BASE}/claude-code`)
-await page.click('text=📁 文件模式') // 默认进入实时监控，需先切到文件模式
+await page.click('text=📁 会话列表') // 默认进入实时监控，需先切到文件模式
 await page.click('text=📤 上传文件分析')
 await page.setInputFiles('input[type=file]', `${FIX}/sample_claude_code_transcript.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
@@ -277,7 +277,7 @@ const exclLines = [
 writeFileSync(`${OUT}/excludes_cache.jsonl`, exclLines.join('\n') + '\n')
 
 await page.goto(`${BASE}/claude-code`)
-await page.click('text=📁 文件模式')
+await page.click('text=📁 会话列表')
 await page.click('text=📤 上传文件分析')
 await page.setInputFiles('input[type=file]', `${OUT}/excludes_cache.jsonl`)
 await page.waitForSelector('text=交互会话记录（transcript JSONL）', { timeout: 15000 })
@@ -502,7 +502,7 @@ await page.click('text=← 返回会话列表')
 await page.waitForSelector('.session-table', { timeout: 10000 })
 console.log('16c. session detail / back-to-list flow OK')
 // 切回实时模式
-await page.click('text=🔴 实时监控模式')
+await page.click('text=🔴 Live')
 await page.waitForSelector('.live-banner', { timeout: 15000 })
 console.log('16d. opencode live/file mode toggle OK')
 rmSync(OC_LIVE_FILE, { force: true })

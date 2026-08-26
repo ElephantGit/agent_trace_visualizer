@@ -73,13 +73,13 @@ export default function GeminiView() {
         <p className="muted">
           GEMINI_TELEMETRY_TRACES_ENABLED 生成的 telemetry.log（拼接 JSON 对象格式）
         </p>
+        <AgentSwitcher />
       </aside>
       <div className="main" id="main">
         {isLoading && <p className="muted">解析中…</p>}
         {data && <GeminiBody result={data as ParseResult} />}
         {!content && <p className="muted">请先上传 telemetry.log。</p>}
       </div>
-      <AgentSwitcher />
     </div>
   )
 }

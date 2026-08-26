@@ -83,14 +83,14 @@ export default function OpencodeView() {
           style={{ width: '100%' }}
           onClick={enterLive}
         >
-          🔴 实时监控模式
+          🔴 Live
         </button>
         <button
           className={`btn ${pageMode === 'file' ? 'btn-primary' : ''}`}
           style={{ width: '100%', marginTop: 6 }}
           onClick={enterFile}
         >
-          📁 文件模式
+          📁 会话列表
         </button>
         <hr />
         {pageMode === 'live' ? (
@@ -105,6 +105,7 @@ export default function OpencodeView() {
           <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
         )}
         {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
+        <AgentSwitcher />
       </aside>
       <div className="main" id="main">
         {pageMode === 'live' ? (
@@ -114,7 +115,7 @@ export default function OpencodeView() {
             <div>
               <Info>未找到正在进行的会话（opencode trace 目录下没有最近活跃的 ndjson 文件）。</Info>
               <p className="muted">
-                可以先切换到「📁 文件模式」查看历史记录；或先启动一个 Opencode 会话后再重试。
+                可以先切换到「📁 会话列表」查看历史记录；或先启动一个 Opencode 会话后再重试。
               </p>
               <button className="btn" onClick={startLive}>🔄 重新定位</button>
             </div>
@@ -179,7 +180,6 @@ export default function OpencodeView() {
           </>
         )}
       </div>
-      <AgentSwitcher />
     </div>
   )
 }
