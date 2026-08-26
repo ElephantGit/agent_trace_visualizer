@@ -347,9 +347,17 @@ tbody tr:hover td { background: var(--surface-2); }
   padding: 16px;
   position: sticky;
   top: 12px;
-  max-height: calc(100dvh - 24px);
-  overflow-y: auto;
+  /* 固定高度：上半部（Live/会话列表等）可滚动，底部 agent 切换器常驻 */
+  height: calc(100dvh - 24px);
+  overflow: hidden;
   box-shadow: var(--shadow-sm);
+}
+/* 上半部内容区：占满剩余空间，内容超出时自身滚动 */
+.sidebar-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 .main { flex: 1; min-width: 0; }
 
@@ -893,10 +901,11 @@ tbody tr:hover td { background: var(--surface-2); }
 /* ── Agent 切换器（侧栏底部，与 Live/会话列表按钮对齐）─────── */
 
 .agent-switcher {
-  margin-top: auto;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }

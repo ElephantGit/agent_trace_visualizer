@@ -74,37 +74,41 @@ export default function OpencodeView() {
   return (
     <div className="page shell">
       <aside className="sidebar">
-        <Link className="btn" to="/">← 返回选择页</Link>
-        <hr />
-        <h3>Opencode</h3>
-        {/* 模式切换：默认实时监控 */}
-        <button
-          className={`btn ${pageMode === 'live' ? 'btn-primary' : ''}`}
-          style={{ width: '100%' }}
-          onClick={enterLive}
-        >
-          🔴 Live
-        </button>
-        <button
-          className={`btn ${pageMode === 'file' ? 'btn-primary' : ''}`}
-          style={{ width: '100%', marginTop: 6 }}
-          onClick={enterFile}
-        >
-          📁 会话列表
-        </button>
-        <hr />
-        {pageMode === 'live' ? (
-          <>
-            <p className="muted">
-              监控当前正在进行的会话（自动定位 ~/.local/share/opencode/trace 下最近活跃的
-              trace_logger ndjson 文件）。
-            </p>
-            {liveError && <p className="muted" style={{ color: '#991b1b' }}>{liveError}</p>}
-          </>
-        ) : (
-          <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
-        )}
-        {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
+        {/* 上半部：Live / 会话列表模式切换 + 说明（内容可滚动） */}
+        <div className="sidebar-main">
+          <Link className="btn" to="/">← 返回选择页</Link>
+          <hr />
+          <h3>Opencode</h3>
+          {/* 模式切换：默认实时监控 */}
+          <button
+            className={`btn ${pageMode === 'live' ? 'btn-primary' : ''}`}
+            style={{ width: '100%' }}
+            onClick={enterLive}
+          >
+            🔴 Live
+          </button>
+          <button
+            className={`btn ${pageMode === 'file' ? 'btn-primary' : ''}`}
+            style={{ width: '100%', marginTop: 6 }}
+            onClick={enterFile}
+          >
+            📁 会话列表
+          </button>
+          <hr />
+          {pageMode === 'live' ? (
+            <>
+              <p className="muted">
+                监控当前正在进行的会话（自动定位 ~/.local/share/opencode/trace 下最近活跃的
+                trace_logger ndjson 文件）。
+              </p>
+              {liveError && <p className="muted" style={{ color: '#991b1b' }}>{liveError}</p>}
+            </>
+          ) : (
+            <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
+          )}
+          {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
+        </div>
+        {/* 下半部：agent 切换（常驻底部） */}
         <AgentSwitcher />
       </aside>
       <div className="main" id="main">
