@@ -3,6 +3,11 @@ name = "trace-viz-backend"
 version = "0.1.0"
 edition = "2024"
 
+# rlib 供本机 server harness 与测试；cdylib 产出 wasm32 目标下的 .wasm。
+[lib]
+name = "trace_viz_backend"
+crate-type = ["rlib", "cdylib"]
+
 # 两个构建形态：
 #   - 默认（server feature）：解析/派生 + axum 服务，本地开发与调试用；
 #   - 纯计算（--no-default-features）：仅解析/派生/BPE 核心，可编译到
@@ -39,6 +44,10 @@ tower-http = { version = "0.6", features = ["fs", "trace"], optional = true }
 async-stream = { version = "0.3", optional = true }
 futures-core = { version = "0.3", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+# ── wasm32 导出层 ───────────────────────────────────────────────
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.127"
 
 # 服务端二进制仅在 server feature 下构建，纯计算形态不会误带 axum 依赖。
 [[bin]]

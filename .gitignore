@@ -28,3 +28,4 @@ Thumbs.db
 
 # assets
 assets/reactflow.json
+plugins/wasm/

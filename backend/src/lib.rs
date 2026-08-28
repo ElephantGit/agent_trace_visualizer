@@ -14,3 +14,5 @@ pub mod models;
 pub mod parsers;
 pub mod tiktoken;
 pub mod util;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
