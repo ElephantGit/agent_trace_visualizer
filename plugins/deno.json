@@ -1,0 +1,27 @@
+{
+  "name": "@ora-space/agent-trace-visualizer-plugin",
+  "exports": "./src/main.ts",
+  "imports": {
+    "@ora-space/plugin-sdk": "jsr:@ora-space/plugin-sdk@0.3.0"
+  },
+  "tasks": {
+    "check": "deno check src/main.ts src/definition_test.ts",
+    "test": "deno test src/",
+    "lint": "deno lint src",
+    "format": "deno fmt src deno.json package.json orax.toml"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.ns", "dom", "esnext"]
+  },
+  "fmt": {
+    "lineWidth": 80,
+    "semiColons": true,
+    "singleQuote": false
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  }
+}

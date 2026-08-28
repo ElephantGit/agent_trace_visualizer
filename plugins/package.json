@@ -1,0 +1,7 @@
+{
+  "name": "@ora-space/agent-trace-visualizer",
+  "version": "0.1.0",
+  "description": "Ora Space agent trace visualization dashboard plugin",
+  "type": "module",
+  "license": "Apache-2.0"
+}

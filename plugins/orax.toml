@@ -1,0 +1,27 @@
+resolver = 1
+title = "Agent Trace Visualizer"
+identifier = "ora-space.agent-trace-visualizer"
+namespace = "official"
+kind = "workbench"
+version = "0.1.0"
+description = "Ora Space agent trace visualization dashboard"
+homepage = "https://github.com/ora-space/dashboard"
+license = "Apache-2.0"
+
+[workbench]
+# 页面可见方法：host 与插件进程注册方法取交集后生效。
+methods = [
+  # 绑定会话（surface 打开时由宿主绑定；读会话与子会话按字节偏移分块）
+  "session/stat",
+  "session/read",
+  # 浏览模式：宿主代扫已声明 agent 的会话列表
+  "session/list",
+  # 纯计算：内容由 main.js 分块直读后喂给 wasm 核心
+  "parse",
+  "replay",
+  "deriveMermaid",
+  "compare",
+  "workflowTree",
+]
+# 请求宿主代读会话 trace（只读）；安装时向用户披露。
+host_capabilities = ["session.trace"]
