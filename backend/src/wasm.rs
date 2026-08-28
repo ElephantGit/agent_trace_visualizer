@@ -212,12 +212,43 @@ pub fn compare(req: &str) -> String {
         .unwrap_or_else(|_| "{\"error\":\"serialization failed\"}".to_owned())
 }
 
-/// 一个 ParseResult JSON → 工作流树 JSON（无可渲染结构时为 `null`）。
+/// 绑定会话的统一回放步骤：`source` 为 `claude_code` | `opencode`，
+/// `raw_events_json` 是事件 JSON 数组字符串（main.js 持有原始行，不经过桥接）。
+#[wasm_bindgen]
+pub fn replay(source: &str, raw_events_json: &str) -> String {
+    let Ok(events) = serde_json::from_str::<Vec<Value>>(raw_events_json) else {
+        return serde_json::to_string(&serde_json::json!({ "error": "无法解析事件数组" }))
+            .unwrap_or_else(|_| "{\"error\":\"bad request\"}".to_owned());
+    };
+    let steps = match source {
+        "opencode" => derive::replay::opencode_to_replay_steps(&events),
+        "claude_code" => derive::replay::claude_code_to_replay_steps(&events),
+        other => {
+            return serde_json::to_string(&serde_json::json!({
+                "error": format!("未知的 source：{other}")
+            }))
+            .unwrap_or_else(|_| "{\"error\":\"unknown source\"}".to_owned());
+        }
+    };
+    serde_json::to_string(&serde_json::json!({
+        "steps": steps,
+        "pageSize": derive::replay::PAGE_SIZE,
+        "contentMaxLength": derive::replay::CONTENT_MAX_LENGTH,
+        "categories": derive::replay::category_styles(),
+    }))
+    .unwrap_or_else(|_| "{\"error\":\"serialization failed\"}".to_owned())
+}
+
+/// 一个 ParseResult JSON → 工作流树 JSON（输入为 null 或无渲染结构时为 `null`）。
 #[wasm_bindgen]
 pub fn workflow_tree(result: &str) -> String {
-    let Ok(result) = serde_json::from_str::<ParseResult>(result) else {
+    // 页面无数据时传 null：与"无渲染结构"同样返回 null 而非错误。
+    let Ok(result) = serde_json::from_str::<Option<ParseResult>>(result) else {
         return serde_json::to_string(&serde_json::json!({ "error": "无法解析 ParseResult" }))
             .unwrap_or_else(|_| "{\"error\":\"bad request\"}".to_owned());
+    };
+    let Some(result) = result else {
+        return "null".to_owned();
     };
     match derive::workflow::build_workflow(&result) {
         Some(root) => serde_json::to_string(&root)
