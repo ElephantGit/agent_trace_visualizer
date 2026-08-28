@@ -12,7 +12,12 @@
 //!
 //! 用法：deno run --allow-read scripts/bench_wasm.ts [--quick]
 
-import { parse, tokenize } from "../plugins/wasm/trace_viz_backend.js";
+import { initSync, parse, tokenize } from "../plugins/wasm/trace_viz_backend.js";
+import wasmBase64 from "../plugins/wasm/trace_viz_backend_bg_b64.ts";
+
+// 与插件进程一致的零权限实例化路径。
+const wasmBytes = Uint8Array.from(atob(wasmBase64), (c) => c.charCodeAt(0));
+initSync({ module: wasmBytes });
 
 // ── 合成 fixture ───────────────────────────────────────────────
 

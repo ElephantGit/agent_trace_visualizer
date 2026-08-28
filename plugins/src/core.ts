@@ -7,10 +7,17 @@ import type { JsonValue } from "@ora-space/plugin-sdk";
 import {
   compare,
   derive_mermaid,
+  initSync,
   parse,
   replay,
   workflow_tree,
 } from "../wasm/trace_viz_backend.js";
+import wasmBase64 from "../wasm/trace_viz_backend_bg_b64.ts";
+
+// 内存实例化：插件进程零权限，不能读取任何文件（模块加载不受读权限限制，
+// base64 字符串作为模块内嵌随包分发）。
+const wasmBytes = Uint8Array.from(atob(wasmBase64), (c) => c.charCodeAt(0));
+initSync({ module: wasmBytes });
 
 /** 统一解析：wasm 返回 JSON 字符串（或错误信封），此处解回对象。 */
 function decode(response: string): JsonValue {
