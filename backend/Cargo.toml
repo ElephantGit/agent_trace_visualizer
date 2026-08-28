@@ -3,9 +3,23 @@ name = "trace-viz-backend"
 version = "0.1.0"
 edition = "2024"
 
+# 两个构建形态：
+#   - 默认（server feature）：解析/派生 + axum 服务，本地开发与调试用；
+#   - 纯计算（--no-default-features）：仅解析/派生/BPE 核心，可编译到
+#     wasm32-unknown-unknown 供 dashboard 插件的 Deno 进程内嵌。
+[features]
+default = ["server"]
+server = [
+    "dep:axum",
+    "dep:tokio",
+    "dep:tower-http",
+    "dep:async-stream",
+    "dep:futures-core",
+    "dep:tracing-subscriber",
+]
+
 [dependencies]
-axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "net"] }
+# ── 纯计算核心（wasm32 兼容，不允许 IO/网络依赖） ────────────────
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tiktoken-rs = "0.9"
@@ -14,11 +28,20 @@ walkdir = "2"
 regex = "1"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8"
-rand = "0.8"
 anyhow = "1"
 thiserror = "2"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tower-http = { version = "0.6", features = ["fs", "trace"] }
-async-stream = "0.3"
-futures-core = "0.3"
+
+# ── 服务端（server feature，本地调试 harness） ──────────────────
+axum = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "net"], optional = true }
+tower-http = { version = "0.6", features = ["fs", "trace"], optional = true }
+async-stream = { version = "0.3", optional = true }
+futures-core = { version = "0.3", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+# 服务端二进制仅在 server feature 下构建，纯计算形态不会误带 axum 依赖。
+[[bin]]
+name = "trace-viz-backend"
+path = "src/main.rs"
+required-features = ["server"]
