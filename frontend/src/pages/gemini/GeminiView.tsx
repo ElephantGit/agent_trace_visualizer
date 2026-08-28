@@ -4,13 +4,12 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ParseResult } from '../../api/types'
-import { useMermaid, useParse } from '../../hooks'
+import { useMermaid } from '../../hooks'
 import AgentSwitcher from '../../components/AgentSwitcher'
 import Plot from '../../components/Plot'
 import MermaidView from '../../components/MermaidView'
-import { Tabs, DataTable, DebugJson, Expander, ErrorBanner, FileUpload, Info } from '../../components/ui/primitives'
+import { Tabs, DataTable, DebugJson, Expander, ErrorBanner, Info } from '../../components/ui/primitives'
 import { download, fmtTok, grouped, toCsv } from '../../derive'
-import type { AgentType } from '../../api/types'
 
 const PLOT_LIMIT = 5000
 
@@ -51,9 +50,11 @@ function categoryColor(cat: string): string {
 }
 
 export default function GeminiView() {
-  const [content, setContent] = useState<ArrayBuffer | null>(null)
-  const [name, setName] = useState('')
-  const { data, error, isLoading } = useParse('gemini' as AgentType, content, name)
+  // 插件模式：gemini 无运行时插件，数据只能来自手动上传（本地调试形态）。
+  // 页面保留结构，数据源关闭。
+  const data = undefined as ParseResult | undefined
+  const error = null
+  const isLoading = false
 
   return (
     <div className="page shell">
@@ -63,21 +64,14 @@ export default function GeminiView() {
           <Link className="btn" to="/">← 返回选择页</Link>
           <hr />
           <h3>Gemini CLI</h3>
-          <FileUpload
-            label="上传 telemetry.log"
-            onFile={(buf, n) => {
-              setContent(buf)
-              setName(n)
-            }}
-          />
-          {name && <p className="muted">已加载：{name}</p>}
+          <Info>插件模式下暂不支持 Gemini 上传解析；Gemini 无运行时插件提供 trace。</Info>
           {error && <ErrorBanner>{String(error)}</ErrorBanner>}
           <p className="muted">
-            GEMINI_TELEMETRY_TRACES_ENABLED 生成的 telemetry.log（拼接 JSON 对象格式）
+            本地调试形态仍可通过 dev harness 上传 telemetry.log（GEMINI_TELEMETRY_TRACES_ENABLED 生成的拼接 JSON 对象格式）。
           </p>
           <hr />
           <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
-            📊 Trajectory 数据搜集
+            📊 Trajectory
           </Link>
         </div>
         {/* 下半部：agent 切换（常驻底部） */}
@@ -86,7 +80,7 @@ export default function GeminiView() {
       <div className="main" id="main">
         {isLoading && <p className="muted">解析中…</p>}
         {data && <GeminiBody result={data as ParseResult} />}
-        {!content && <p className="muted">请先上传 telemetry.log。</p>}
+        {!data && <p className="muted">插件模式下无 Gemini 数据源。</p>}
       </div>
     </div>
   )

@@ -1,40 +1,25 @@
 // 实时监控视图（Claude Code / Opencode 共用）：
-// 顶部横幅（状态 + 会话选择下拉框 + 暂停/恢复 + 退出）+ 完整 body
-// （各 agent 的全部 tab 随节流刷新实时更新，时间轴走 SSE 即时路径）。
+// 顶部横幅（状态 + 暂停/恢复 + 退出）+ 完整 body（各 agent 的全部 tab
+// 随节流刷新实时更新）。插件模式下监控对象即面板绑定的会话：
+// 500ms stat 轮询 + 字节偏移增量读取，无 SSE、无文件路径。
 
 import { useMemo } from 'react'
-import { useLiveStream, useTraces, type LiveAgent } from '../hooks'
+import { useLiveStream, type LiveAgent } from '../hooks'
 import { buildTimeline, buildTimelineOpencode } from '../derive'
 import ClaudeBody from '../pages/claude/ClaudeBody'
 import OpencodeBody from '../pages/opencode/OpencodeBody'
-import TraceLabel from './TraceLabel'
 
 const LIVE_STATUS_LABEL: Record<string, string> = {
-  loading: '加载中…',
-  live: 'SSE 实时',
-  polling: '轮询降级',
+  loading: '等待 trace 生成…',
+  live: '实时',
   error: '加载失败',
 }
 
-export default function LiveMonitor({
-  path: initialPath,
-  agent,
-  onExit,
-}: {
-  path: string
-  agent: LiveAgent
-  onExit: () => void
-}) {
-  const { rawEvents, result, status, paused, path, autoFollow, follow, followLatest, pause, resume } =
-    useLiveStream(initialPath, agent)
+export default function LiveMonitor({ agent, onExit }: { agent: LiveAgent; onExit: () => void }) {
+  const { rawEvents, result, status, paused, offset, pause, resume } = useLiveStream(agent)
   const model = useMemo(
     () => (agent === 'opencode' ? buildTimelineOpencode(rawEvents) : buildTimeline(rawEvents)),
     [agent, rawEvents],
-  )
-  const traces = useTraces(undefined, agent)
-  const recent = useMemo(
-    () => [...(traces.data ?? [])].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 10),
-    [traces.data],
   )
 
   const body = result && (
@@ -53,25 +38,8 @@ export default function LiveMonitor({
           {paused ? '已暂停' : 'LIVE'}
         </span>
         <span className="live-title">
-          {path?.split('/').pop()} · {model.events.length} 个事件 ·{' '}
-          {LIVE_STATUS_LABEL[status] ?? status}
+          {model.events.length} 个事件 · 已读取 {offset} 字节 · {LIVE_STATUS_LABEL[status] ?? status}
         </span>
-        <select
-          className="pill-input"
-          value={autoFollow ? '__auto__' : (path ?? '__auto__')}
-          onChange={(e) => {
-            const v = e.target.value
-            if (v === '__auto__') followLatest()
-            else follow(v)
-          }}
-        >
-          <option value="__auto__">🔄 自动跟随最新会话</option>
-          {recent.map((t) => (
-            <option key={t.path} value={t.path}>
-              <TraceLabel path={t.path} agent={agent} name={t.name} />
-            </option>
-          ))}
-        </select>
         <button className="btn" onClick={paused ? resume : pause}>
           {paused ? '▶ 恢复' : '⏸ 暂停'}
         </button>
@@ -80,12 +48,10 @@ export default function LiveMonitor({
         </button>
       </div>
       <p className="muted" style={{ margin: '6px 0' }}>
-        {autoFollow
-          ? '自动跟随中：监控最新的活跃会话；当其他会话更活跃时自动切换（当前会话 10s 无新事件时触发）。也可在上方手动固定某个会话。'
-          : '已固定监控上方选中的会话；可切回「🔄 自动跟随最新会话」。'}
+        监控对象为面板绑定的会话：新事件由宿主代读、按字节偏移增量推送，节流全量解析由插件进程 wasm 核心完成。
       </p>
-      {status === 'loading' && <p className="muted">正在加载会话内容…</p>}
-      {status === 'error' && <p className="muted">会话加载失败，请检查文件是否存在。</p>}
+      {status === 'loading' && <p className="muted">会话刚建立，等待 trace 文件生成…</p>}
+      {status === 'error' && <p className="muted">会话加载失败，请稍后重试。</p>}
       {body}
     </div>
   )

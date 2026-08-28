@@ -1,64 +1,57 @@
-// Typed fetch wrappers for the Rust backend API.
+// 插件模式传输层：window.ora.invoke（页面 → Ora 宿主 → 插件进程）。
+//
+// trace 内容由宿主代读（session.trace 能力），解析/派生在插件进程的 wasm
+// 核心内完成；本层不再发起任何 fetch/SSE，也不携带任何文件路径。
 
 import type {
   AgentType,
   ComparePayload,
-  EmbeddedResponse,
   MermaidResponse,
   ParseResult,
+  TraceChunk,
   TraceEntry,
+  TraceStat,
   WorkflowNode,
 } from './types'
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
-  if (!res.ok) {
-    let message = `HTTP ${res.status}`
-    try {
-      const body = await res.json()
-      if (body?.message) message = body.message
-    } catch {
-      // non-JSON error body
+/** host 注入的 workbench 桥（workbench_api.js 定义）。 */
+declare global {
+  interface Window {
+    ora: {
+      invoke<T = unknown>(method: string, input?: unknown): Promise<T>
     }
-    throw new Error(message)
   }
-  return res.json() as Promise<T>
+}
+
+/** 统一调用入口：input 缺省为 null（与 WorkbenchCall 契约一致）。 */
+function invoke<T = unknown>(method: string, input?: unknown): Promise<T> {
+  return window.ora.invoke<T>(method, input ?? null)
 }
 
 export const api = {
-  health: () => request<{ ok: boolean }>('/api/health'),
+  /** 绑定会话的 trace 元数据。 */
+  stat: () => invoke<TraceStat>('session/stat'),
 
-  parse: (agentType: AgentType, content: ArrayBuffer | Uint8Array) =>
-    request<ParseResult>(`/api/parse/${agentType}`, {
-      method: 'POST',
-      body: content as BodyInit,
+  /** 按字节偏移分块读取；childSessionId 用于子会话下钻。 */
+  readChunk: (offset: number, maxBytes?: number, childSessionId?: string) =>
+    invoke<TraceChunk>('session/read', {
+      offset,
+      ...(maxBytes !== undefined ? { maxBytes } : {}),
+      ...(childSessionId !== undefined ? { childSessionId } : {}),
     }),
 
-  parseFromPath: (agentType: AgentType, path: string) =>
-    request<ParseResult>('/api/parse-from-path', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ agentType, path }),
-    }),
+  /** 浏览模式：宿主代扫的会话列表（单 agent 过滤）。 */
+  list: (agent?: 'claude_code' | 'opencode') =>
+    invoke<{ entries: TraceEntry[] }>('session/list', agent ? { agent } : undefined),
 
-  embedded: (sessionId: string, agentType: string) =>
-    request<EmbeddedResponse>(
-      `/api/embedded/${encodeURIComponent(sessionId)}?agent_type=${encodeURIComponent(agentType)}`,
-    ),
+  /** 解析绑定会话（无参数）或列表内命名的会话（宿主校验成员资格）。 */
+  parseSession: (named?: { agent: string; sessionId: string }) =>
+    invoke<ParseResult>('parse', named),
 
-  traces: (root?: string, agent?: 'claude_code' | 'opencode') =>
-    request<TraceEntry[]>(
-      `/api/traces?${[
-        root ? `root=${encodeURIComponent(root)}` : '',
-        agent === 'opencode' ? 'agent=opencode' : '',
-      ]
-        .filter(Boolean)
-        .join('&')}`,
-    ),
+  /** 绑定会话的统一回放步骤。 */
+  replay: () => invoke<{ steps: unknown[]; pageSize: number; contentMaxLength: number; categories: unknown[] }>('replay'),
 
-  subagent: (sessionId: string) =>
-    request<ParseResult>(`/api/subagent/${encodeURIComponent(sessionId)}`, { method: 'POST' }),
-
+  /** 五种 mermaid 图之一。 */
   mermaid: (req: {
     kind: string
     rawEvents?: unknown[]
@@ -67,50 +60,20 @@ export const api = {
     seed?: number
     data?: unknown
     result?: ParseResult
-  }) =>
-    request<MermaidResponse>('/api/derive/mermaid', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(req),
-    }),
+  }) => invoke<MermaidResponse>('deriveMermaid', req),
 
-  compare: (resultA: ParseResult, resultB: ParseResult, labelA: string, labelB: string) =>
-    request<ComparePayload>('/api/compare', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ resultA, resultB, labelA, labelB }),
-    }),
+  /** 两个 ParseResult → 完整对比负载。 */
+  compare: (
+    resultA: ParseResult,
+    resultB: ParseResult,
+    labelA: string,
+    labelB: string,
+  ) => invoke<ComparePayload>('compare', { resultA, resultB, labelA, labelB }),
 
-  workflowTree: (result: ParseResult) =>
-    request<WorkflowNode | null>('/api/workflow/tree', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ result }),
-    }),
+  /** ParseResult → 工作流树。 */
+  workflowTree: (result: ParseResult) => invoke<WorkflowNode | null>('workflowTree', { result }),
 
-  reactflow: () => request<unknown>('/api/workflow/reactflow'),
-
-  traceName: (path: string, agent?: 'claude_code' | 'opencode') =>
-    request<{ name: string | null }>(
-      `/api/trace-name?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
-    ),
-
-  trajectory: () => request<TraceEntry[]>('/api/trajectory'),
-
-  sessionMeta: (path: string, agent?: 'claude_code' | 'opencode') =>
-    request<{
-      name: string | null
-      active: boolean
-      lastActiveMs: number
-      durationMs: number | null
-      agentCount: number
-      directory: string | null
-    }>(
-      `/api/session-meta?path=${encodeURIComponent(path)}${agent === 'opencode' ? '&agent=opencode' : ''}`,
-    ),
-
-  liveLatest: (agent?: 'claude_code' | 'opencode') =>
-    request<{ path: string; mtimeMs: number; active: boolean }>(
-      `/api/live/latest${agent === 'opencode' ? '?agent=opencode' : ''}`,
-    ),
+  /** 子会话下钻：按子会话 id 解析（子会话文件同样在宿主代读的列表中）。 */
+  subagent: (agent: AgentType, childSessionId: string) =>
+    invoke<ParseResult>('parse', { agent, sessionId: childSessionId }),
 }

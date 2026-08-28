@@ -1,19 +1,18 @@
-// Embedded mode — Ora iframe entry with NO data-source pickers.
-// Error copy kept verbatim from legacy app.py render_embedded.
+// Embedded mode — 面板绑定会话入口（无数据源选择器）。
+// 插件模式下 Ora 已把面板绑定到会话：直接解析绑定会话（宿主代读 + wasm 核心）。
 
-import { useEmbedded } from '../hooks'
-import { ErrorBanner, Info, Warning } from '../components/ui/primitives'
+import { useParseSession } from '../hooks'
+import { ErrorBanner, Info } from '../components/ui/primitives'
 import OpencodeBody from './opencode/OpencodeBody'
 import ClaudeBody from './claude/ClaudeBody'
 
 export default function EmbeddedView({
-  sessionId,
   agentType,
 }: {
-  sessionId: string
+  sessionId?: string
   agentType: string
 }) {
-  const { data, error, isLoading } = useEmbedded(sessionId, agentType)
+  const { data, error, isLoading } = useParseSession()
 
   if (isLoading) {
     return <div className="muted">加载中…</div>
@@ -23,24 +22,10 @@ export default function EmbeddedView({
   }
   if (!data) return null
 
-  switch (data.status) {
-    case 'ok':
-      if (agentType === 'opencode') return <OpencodeBody result={data.result!} embedded />
-      if (agentType === 'claude_code') return <ClaudeBody result={data.result!} embedded />
-      return <ErrorBanner>{data.message ?? `无嵌入渲染器对应 agent_type：${agentType}`}</ErrorBanner>
-    case 'locator_missing':
-      return (
-        <Warning>
-          定位器尚未生成。请先在 Ora 中打开该会话的 dashboard，让 Ora 解析并写入 trace 文件路径。
-        </Warning>
-      )
-    case 'agent_mismatch':
-      return <ErrorBanner>{data.message}</ErrorBanner>
-    case 'trace_missing':
-      return <Info>trace 文件尚未生成或为空——会话进行中或尚未产生事件，稍后再试。</Info>
-    case 'parse_empty':
-      return <Warning>已读取 trace 文件，但未解析到任何事件。</Warning>
-    default:
-      return <ErrorBanner>{data.message ?? '不支持的 agent_type'}</ErrorBanner>
+  if ('error' in (data as unknown as Record<string, unknown>)) {
+    return <Info>trace 文件尚未生成或为空——会话进行中或尚未产生事件，稍后再试。</Info>
   }
+  if (agentType === 'opencode') return <OpencodeBody result={data} embedded />
+  if (agentType === 'claude_code') return <ClaudeBody result={data} embedded />
+  return <ErrorBanner>{`无嵌入渲染器对应 agent_type：${agentType}`}</ErrorBanner>
 }

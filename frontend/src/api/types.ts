@@ -66,7 +66,8 @@ export interface WorkflowNode {
 
 export interface ParseResult {
   source: string
-  raw_events: unknown[]
+  /// 插件模式下由进程内计算剥离（RawEvents 走分块直读）；类型保留为可选。
+  raw_events?: unknown[]
   session_info: SessionInfo
   result_info: ResultInfo
   turns: Turn[]
@@ -80,24 +81,30 @@ export interface ParseResult {
 
 export type AgentType = 'opencode' | 'claude_code' | 'gemini'
 
-export interface EmbeddedResponse {
-  status: 'ok' | 'locator_missing' | 'agent_mismatch' | 'trace_missing' | 'parse_empty' | 'unsupported_agent'
-  result?: ParseResult
-  message?: string
-}
-
+/// 会话列表条目（宿主代扫；无路径字段——路径从不离开宿主）。
 export interface TraceEntry {
-  path: string
+  sessionId: string
+  /// 所属 agent（trajectory 聚合返回；单 agent 列表也带此字段）
+  agent?: string
+  /// 可读会话名（宿主头扫描提取；null = 未提取到）
+  name?: string | null
   mtimeMs: number
   sizeBytes: number
-  /// 可读会话名（后端头扫描提取；null = 未提取到）
-  name?: string | null
-  /// 会话所在目录（cwd）
-  directory?: string | null
-  /// 会话运行时长（毫秒）
-  durationMs?: number | null
-  /// 所属 agent（trajectory 聚合接口返回；单 agent 列表无此字段）
-  agent?: string
+}
+
+/// 绑定会话的 trace 元数据（宿主 stat）。
+export interface TraceStat {
+  format: string
+  exists: boolean
+  sizeBytes: number
+  mtimeMs: number
+}
+
+/// 字节偏移续读分块（宿主 read）。
+export interface TraceChunk {
+  text: string
+  nextOffset: number
+  done: boolean
 }
 
 export interface MermaidResponse {

@@ -53,9 +53,17 @@ export class SessionCache {
     return this.#request(method, params) as unknown as Promise<T>;
   }
 
-  /** 绑定会话的 trace 元数据。 */
-  stat(surface: Surface): Promise<TraceStat> {
-    return this.#host<TraceStat>("ora/session/trace_stat", { surface });
+  /** 绑定会话（或列表内命名会话）的 trace 元数据。 */
+  stat(
+    surface: Surface,
+    named?: { agent: string; sessionId: string },
+  ): Promise<TraceStat> {
+    const params: Record<string, JsonValue> = { surface };
+    if (named !== undefined) {
+      params.agent = named.agent;
+      params.sessionId = named.sessionId;
+    }
+    return this.#host<TraceStat>("ora/session/trace_stat", params);
   }
 
   /** 按字节偏移分块读取（子会话读取需 childSessionId，宿主校验其在父 trace 中出现过）。 */
@@ -64,6 +72,7 @@ export class SessionCache {
     offset = 0,
     maxBytes = READ_CHUNK_BYTES,
     childSessionId?: string,
+    named?: { agent: string; sessionId: string },
   ): Promise<TraceChunk> {
     const params: Record<string, JsonValue> = {
       surface,
@@ -72,6 +81,10 @@ export class SessionCache {
     };
     if (childSessionId !== undefined) {
       params.childSessionId = childSessionId;
+    }
+    if (named !== undefined) {
+      params.agent = named.agent;
+      params.sessionId = named.sessionId;
     }
     return this.#host<TraceChunk>("ora/session/trace_read", params);
   }
@@ -85,12 +98,21 @@ export class SessionCache {
     return this.#host<JsonValue>("ora/session/trace_list", params);
   }
 
-  /** 分块循环读取绑定会话全文（增长中的文件读到 done 为止；调用方可反复 poll）。 */
-  async readAll(surface: Surface): Promise<string> {
+  /** 分块循环读取会话全文（增长中的文件读到 done 为止；调用方可反复 poll）。 */
+  async readAll(
+    surface: Surface,
+    named?: { agent: string; sessionId: string },
+  ): Promise<string> {
     let text = "";
     let offset = 0;
     for (;;) {
-      const chunk = await this.read(surface, offset);
+      const chunk = await this.read(
+        surface,
+        offset,
+        READ_CHUNK_BYTES,
+        undefined,
+        named,
+      );
       text += chunk.text;
       offset = chunk.nextOffset;
       if (chunk.done) {
@@ -99,14 +121,17 @@ export class SessionCache {
     }
   }
 
-  /** 绑定会话的 ParseResult（wasm 核心解析，已剥离 raw_events）。 */
-  async parseBound(surface: Surface): Promise<JsonValue> {
-    const stat = await this.stat(surface);
+  /** 绑定会话（或列表内命名会话）的 ParseResult（wasm 核心解析，已剥离 raw_events）。 */
+  async parseBound(
+    surface: Surface,
+    named?: { agent: string; sessionId: string },
+  ): Promise<JsonValue> {
+    const stat = await this.stat(surface, named);
     if (!stat.exists) {
       // 会话刚建立时 trace 尚未落盘：页面按 500ms 重试窗口展示"等待 trace 生成"。
       return { error: "trace_not_ready" };
     }
-    const text = await this.readAll(surface);
+    const text = await this.readAll(surface, named);
     return core.parse(stat.format, text) as JsonValue;
   }
 

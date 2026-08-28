@@ -48,8 +48,17 @@ export function buildHandlers(cache: SessionCache) {
       return cache.list(surfaceOf(call), input.agent);
     },
 
-    /** 绑定会话全文 → wasm 核心解析（剥离 raw_events 的 ParseResult）。 */
-    parse: (call: WorkbenchCall) => cache.parseBound(surfaceOf(call)),
+    /** 绑定会话（无参）或列表内命名会话（{agent, sessionId}）全文 → wasm 核心解析。 */
+    parse: (call: WorkbenchCall) => {
+      const input = (call.input ?? {}) as {
+        agent?: string;
+        sessionId?: string;
+      };
+      const named = input.agent !== undefined && input.sessionId !== undefined
+        ? { agent: input.agent, sessionId: input.sessionId }
+        : undefined;
+      return cache.parseBound(surfaceOf(call), named);
+    },
 
     /** 绑定会话的统一回放步骤（事件在进程内还原，不经过桥接）。 */
     replay: (call: WorkbenchCall) => cache.replayBound(surfaceOf(call)),

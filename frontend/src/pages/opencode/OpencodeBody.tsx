@@ -37,7 +37,7 @@ export default function OpencodeBody({
   embedded?: boolean
   /// 实时监控模式：时间轴自动滚动 + 新行高亮；各 tab 随节流刷新更新
   live?: boolean
-  /// 实时模式下的即时事件流（SSE 毫秒级）；未提供时用 result.raw_events
+  /// 实时模式下的即时事件流（SSE 毫秒级）；未提供时用 result.raw_events ?? []
   liveEvents?: unknown[]
   /// 初始选中的 tab（实时模式默认落在时间轴）
   initialTab?: string
@@ -46,7 +46,7 @@ export default function OpencodeBody({
   const workflowTree = useWorkflowTree(result)
   const mermaid = useMermaid({
     kind: 'sequence-opencode',
-    rawEvents: result.raw_events,
+    rawEvents: result.raw_events ?? [],
     maxEvents: 60,
     seed: 42,
   })
@@ -56,7 +56,7 @@ export default function OpencodeBody({
 
   const overview = useMemo(() => {
     const eventTypes = new Map<string, number>()
-    for (const raw of result.raw_events) {
+    for (const raw of result.raw_events ?? []) {
       const t = String((raw as Record<string, unknown>).type ?? '?')
       eventTypes.set(t, (eventTypes.get(t) ?? 0) + 1)
     }
@@ -66,7 +66,7 @@ export default function OpencodeBody({
       eventTypes: [...eventTypes.entries()].sort((a, b) => b[1] - a[1]),
       toolCounts: [...toolCounts.entries()].sort((a, b) => b[1] - a[1]),
     }
-  }, [result.raw_events, tools])
+  }, [result.raw_events ?? [], tools])
 
   return (
     <div className="page">
@@ -80,7 +80,7 @@ export default function OpencodeBody({
       {tab === 'replay' && (
         <ReplayView
           agent="opencode"
-          rawEvents={result.raw_events}
+          rawEvents={result.raw_events ?? []}
           workflowRoot={workflowTree.data ?? null}
           result={result}
         />
@@ -95,12 +95,12 @@ export default function OpencodeBody({
       {tab === 'tokens' && <TokensTab turns={turns} />}
 
       {tab === 'timeline' && (
-        <OpencodeTimelineTab rawEvents={liveEvents ?? result.raw_events} live={live} />
+        <OpencodeTimelineTab rawEvents={liveEvents ?? result.raw_events ?? []} live={live} />
       )}
 
       {tab === 'tools' && <ToolsTab result={result} />}
 
-      {tab === 'raw' && <RawEventsTab rawEvents={result.raw_events} keyPrefix="opencode" />}
+      {tab === 'raw' && <RawEventsTab rawEvents={result.raw_events ?? []} keyPrefix="opencode" />}
 
       {!embedded && (
         <>
@@ -228,7 +228,7 @@ function SubagentTab({ result }: { result: ParseResult }) {
       const childId = String(s.childSessionID ?? '')
       return {
         queryKey: ['subagent', childId],
-        queryFn: () => api.subagent(childId),
+        queryFn: () => api.subagent('opencode', childId),
         enabled: !!childId,
         retry: false,
       }
@@ -243,7 +243,7 @@ function SubagentTab({ result }: { result: ParseResult }) {
     const childId = String(sub.childSessionID ?? '')
     const q = childQueries[i]
     const child = (q?.data ?? undefined) as ParseResult | undefined
-    const available = !!child && child.raw_events.length > 0
+    const available = !!child && (child.raw_events ?? []).length > 0
     return {
       sub,
       childId,

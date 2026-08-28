@@ -5,15 +5,14 @@
 import { useMemo, useState } from 'react'
 import type { TraceEntry } from '../api/types'
 import type { LiveAgent } from '../hooks'
-import { useSessionMeta } from '../hooks'
-import { formatDuration } from '../derive'
+
 import { Pagination, Info } from './ui/primitives'
 import TraceLabel from './TraceLabel'
 
 const PAGE_SIZE = 20
 const ACTIVE_WINDOW_MS = 5 * 60 * 1000
 
-type SortKey = 'mtime' | 'duration'
+type SortKey = 'mtime' | 'name'
 type StatusFilter = 'all' | 'active' | 'ended'
 
 const AGENT_LABELS: Record<string, string> = {
@@ -59,7 +58,7 @@ export default function SessionTable({
 
   const directories = useMemo(
     () =>
-      [...new Set(traces.map((t) => t.directory).filter((d): d is string => !!d && d.length > 0))].sort(
+      [...new Set(traces.map((t) => t.sessionId).filter((d): d is string => !!d && d.length > 0))].sort(
         (a, b) => a.localeCompare(b),
       ),
     [traces],
@@ -69,10 +68,10 @@ export default function SessionTable({
     const kw = keyword.trim().toLowerCase()
     const out = traces.filter((t) => {
       if (status !== 'all' && isActive(t) !== (status === 'active')) return false
-      if (dirFilter !== '__all__' && t.directory !== dirFilter) return false
+      if (dirFilter !== '__all__' && t.sessionId !== dirFilter) return false
       if (agentFilter !== '__all__' && t.agent !== agentFilter) return false
       if (kw) {
-        const hay = `${t.name ?? ''} ${t.path} ${t.directory ?? ''}`.toLowerCase()
+        const hay = `${t.name ?? ''} ${t.sessionId} ${''}`.toLowerCase()
         if (!hay.includes(kw)) return false
       }
       return true
@@ -81,9 +80,9 @@ export default function SessionTable({
       if (sortKey === 'mtime') {
         return sortDir === 'desc' ? b.mtimeMs - a.mtimeMs : a.mtimeMs - b.mtimeMs
       }
-      const da = a.durationMs ?? -1
-      const db = b.durationMs ?? -1
-      return sortDir === 'desc' ? db - da : da - db
+      const da = a.name ?? ''
+      const db = b.name ?? ''
+      return sortDir === 'desc' ? db.localeCompare(da) : da.localeCompare(db)
     })
     return out
   }, [traces, keyword, dirFilter, status, agentFilter, sortKey, sortDir])
@@ -206,8 +205,8 @@ export default function SessionTable({
                   <th className="session-sortable" onClick={() => toggleSort('mtime')}>
                     最后活跃时间{sortIndicator('mtime')}
                   </th>
-                  <th className="session-sortable" onClick={() => toggleSort('duration')}>
-                    持续时间{sortIndicator('duration')}
+                  <th className="session-sortable" onClick={() => toggleSort('name')}>
+                    会话名{sortIndicator('name')}
                   </th>
                   <th>Agent 数量</th>
                   <th>目录</th>
@@ -216,12 +215,12 @@ export default function SessionTable({
               <tbody>
                 {rows.map((t) => (
                   <SessionRow
-                    key={`${t.agent ?? agent}-${t.path}`}
+                    key={`${t.agent ?? agent}-${t.sessionId}`}
                     agent={(t.agent as LiveAgent | undefined) ?? agent}
                     t={t}
-                    selected={selected === t.path}
+                    selected={selected === t.sessionId}
                     showAgent={showAgentColumn}
-                    onClick={() => onSelect(t.path)}
+                    onClick={() => onSelect(t.sessionId)}
                   />
                 ))}
               </tbody>
@@ -254,18 +253,16 @@ function SessionRow({
   showAgent: boolean
   onClick: () => void
 }) {
-  const meta = useSessionMeta(t.path, agent)
   const active = isActive(t)
-  const durationMs = t.durationMs
 
   return (
     <tr
       className={`session-row ${selected ? 'session-row-selected' : ''}`}
       onClick={onClick}
-      title={t.path}
+      title={t.sessionId}
     >
       <td className="session-name">
-        <TraceLabel path={t.path} agent={agent} name={t.name} />
+        <TraceLabel sessionId={t.sessionId} agent={agent} name={t.name} />
       </td>
       {showAgent && (
         <td className="session-agent">{AGENT_LABELS[t.agent ?? agent] ?? (t.agent ?? agent)}</td>
@@ -278,11 +275,8 @@ function SessionRow({
         )}
       </td>
       <td className="session-time">{fmtTime(t.mtimeMs)}</td>
-      <td>{durationMs !== null && durationMs !== undefined ? formatDuration(durationMs) : '—'}</td>
-      <td>{meta.data?.agentCount ?? '—'}</td>
-      <td className="session-dir" title={t.directory ?? undefined}>
-        {t.directory ?? '—'}
-      </td>
+      <td>—</td>
+      <td className="session-dir">—</td>
     </tr>
   )
 }

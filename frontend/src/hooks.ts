@@ -1,4 +1,8 @@
-// TanStack Query hooks — the frontend cache that replaces st.cache_data.
+// TanStack Query hooks — 插件模式的查询缓存层。
+//
+// 无 fetch/SSE：实时监控走 500ms stat 轮询 + 字节偏移增量 readChunk，
+// 节流全量解析交给插件进程的 wasm 核心（parse 剥离 raw_events，
+// 原始事件由 readChunk 直读行还原）。
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -6,9 +10,9 @@ import { api } from './api/client'
 import type { AgentType, ParseResult } from './api/types'
 
 
-// ── 实时监控（SSE 为主，轮询降级）────────────────────────────
+// ── 实时监控（轮询 + 字节偏移增量）────────────────────────────
 
-export type LiveStatus = 'idle' | 'loading' | 'live' | 'polling' | 'error'
+export type LiveStatus = 'idle' | 'loading' | 'live' | 'error'
 
 /// 支持实时监控的 agent 类型（claude_code transcript / opencode ndjson）。
 export type LiveAgent = 'claude_code' | 'opencode'
@@ -16,62 +20,41 @@ export type LiveAgent = 'claude_code' | 'opencode'
 export interface LiveStreamState {
   rawEvents: unknown[]
   /// 节流刷新的完整解析结果（会话回放/总览/Token/工具/Subagent/成本等
-  /// 所有 tab 共享；每 ~2s 跟随新事件刷新一次，含 tiktoken 缓存加速）
+  /// 所有 tab 共享；每 ~2s 跟随新事件刷新一次，wasm 核心计算）
   result: ParseResult | null
   status: LiveStatus
   paused: boolean
-  /// 当前实际监控的文件路径（自动跟随时可能切换到更新的会话）
-  path: string | null
-  /// 是否处于自动跟随模式（手动选择具体文件后关闭）
-  autoFollow: boolean
-  /// 手动指定要监控的文件（关闭自动跟随）
-  follow: (path: string) => void
-  /// 回到自动跟随最新会话模式并立即跳转到当前最新文件
-  followLatest: () => void
+  /// 已消费的字节偏移（readChunk 续读游标）
+  offset: number
   pause: () => void
   resume: () => void
 }
 
-/// 订阅一个 transcript 文件的实时事件流：
-/// - 初始经 parse-from-path 全量加载
-/// - EventSource 连接 /api/live 接收增量行；连续 3 次失败降级为 2s 轮询
-/// - 按 uuid 去重（重连后同事件可能重发）
-/// - 节流全量刷新：新事件到达后最多每 2s 重取一次完整 ParseResult，
-///   供时间轴之外的所有 tab 实时更新（时间轴本身走 SSE 即时路径）
-/// - 暂停：冻结事件追加（连接保持）
-/// - 自动跟随：每 3s 查询 /api/live/latest，当另一个文件在最近 15s 内
-///   有写入、且当前文件已 10s 无新事件时，切换到那个更新的会话
-///   （用户先点监控再开新会话、或多会话并行的场景）；
-///   手动选择文件后关闭自动跟随，可随时切回。
-export function useLiveStream(
-  initialPath: string | null,
-  agent: LiveAgent = 'claude_code',
-): LiveStreamState {
-  const [path, setPath] = useState(initialPath)
-  const [autoFollow, setAutoFollow] = useState(true)
+/// 订阅绑定会话的实时事件流：
+/// - 每 500ms 调 stat（元数据轮询，O(1) 宿主路径）
+/// - 有增长时按字节偏移 readChunk 增量拉取，逐行还原事件（uuid 去重）
+/// - 节流全量刷新：新事件到达后最多每 2s 重取一次完整 ParseResult
+/// - 暂停：冻结事件追加与刷新（通道保留，恢复时补齐）
+export function useLiveStream(agent: LiveAgent = 'claude_code'): LiveStreamState {
   const [rawEvents, setRawEvents] = useState<unknown[]>([])
   const [result, setResult] = useState<ParseResult | null>(null)
   const [status, setStatus] = useState<LiveStatus>('idle')
   const [paused, setPaused] = useState(false)
-  // 恢复时 +1 触发全量重载（暂停期间被丢弃的事件由此补齐）
-  const [reloadTick, setReloadTick] = useState(0)
+  const [offset, setOffset] = useState(0)
   const pausedRef = useRef(paused)
   pausedRef.current = paused
-  const pathRef = useRef(path)
-  pathRef.current = path
+  const offsetRef = useRef(0)
+  offsetRef.current = offset
   const agentRef = useRef(agent)
   agentRef.current = agent
   const seenUuids = useRef<Set<string>>(new Set())
-  // 最近一次追加事件的时间——用于判断"当前文件是否安静"
   const lastAppendAt = useRef<number>(Date.now())
-  // 节流刷新的调度状态
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastRefreshAt = useRef<number>(0)
   const refreshInFlight = useRef(false)
   const initialLoaded = useRef(false)
 
-  /// 按 uuid 去重合并：result 事件在前、prev 中不在 result 里的在后
-  /// （保证顺序 + 解析期间 SSE 已追加的事件不丢）。
+  /// 按 uuid 去重合并：result 事件在前、prev 中不在 result 里的在后。
   const mergeRaw = (prev: unknown[], incoming: unknown[]) => {
     const inResult = new Set(
       incoming
@@ -86,8 +69,20 @@ export function useLiveStream(
     return [...incoming, ...extra]
   }
 
-  const appendEvents = (events: unknown[]) => {
-    if (pausedRef.current) return
+  /// 把增量 chunk 文本还原成事件并追加（uuid 去重）。
+  const appendChunk = (text: string) => {
+    const events: unknown[] = []
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim()
+      if (trimmed === '') continue
+      try {
+        events.push(JSON.parse(trimmed))
+      } catch {
+        /* 半行/畸形行跳过 */
+      }
+    }
+    if (events.length === 0) return
+    lastAppendAt.current = Date.now()
     setRawEvents((prev) => {
       const fresh = events.filter((e) => {
         const u = (e as Record<string, unknown>).uuid
@@ -96,34 +91,27 @@ export function useLiveStream(
         seenUuids.current.add(String(u))
         return true
       })
-      if (fresh.length) {
-        lastAppendAt.current = Date.now()
-        scheduleRefresh()
-      }
       return fresh.length ? [...prev, ...fresh] : prev
     })
+    scheduleRefresh()
   }
 
-  // 节流全量刷新：新事件到达后以 2s 间隔重取完整 ParseResult
-  // （尾沿调度：持续有事件时每 ~2s 一次；事件停止后再补一次收尾）。
-  // 大文件单次解析可能 >2s：in-flight 期间的新事件在完成后补一轮。
+  // 节流全量刷新：新事件到达后以 2s 间隔重取完整 ParseResult（尾沿调度）。
   const doRefresh = () => {
     if (!initialLoaded.current || pausedRef.current || refreshInFlight.current) return
-    const p = pathRef.current
-    if (!p) return
     refreshInFlight.current = true
     const startedAt = Date.now()
     api
-      .parseFromPath(agentRef.current, p)
+      .parseSession()
       .then((r) => {
         if (pausedRef.current) return
         setResult(r)
-        for (const e of r.raw_events) {
+        setStatus('live')
+        for (const e of r.raw_events ?? []) {
           const u = (e as Record<string, unknown>).uuid
           if (u !== undefined) seenUuids.current.add(String(u))
         }
-        setRawEvents((prev) => mergeRaw(prev, r.raw_events))
-        setStatus('live')
+        setRawEvents((prev) => mergeRaw(prev, r.raw_events ?? []))
       })
       .catch(() => {
         /* 单次刷新失败忽略，下轮重试 */
@@ -131,14 +119,13 @@ export function useLiveStream(
       .finally(() => {
         refreshInFlight.current = false
         lastRefreshAt.current = Date.now()
-        // 解析期间到达的新事件需要补一轮收尾刷新
         if (lastAppendAt.current > startedAt) {
           scheduleRefresh()
         }
       })
   }
   const scheduleRefresh = () => {
-    if (refreshTimer.current) return // 已有尾沿调度
+    if (refreshTimer.current) return
     const wait = Math.max(0, 2000 - (Date.now() - lastRefreshAt.current))
     refreshTimer.current = setTimeout(() => {
       refreshTimer.current = null
@@ -146,194 +133,160 @@ export function useLiveStream(
     }, wait)
   }
 
-  // 初始全量加载。注意与 SSE 增量的竞态：解析期间 SSE 已追加的新事件
-  // 不能被子集替换丢失——按 uuid 合并（全量在前、解析期增量在后）。
+  // 初始全量加载：先解析（wasm），再把期间到达的增量事件合并进来。
   useEffect(() => {
-    if (!path) return
     setStatus('loading')
     seenUuids.current.clear()
     setRawEvents([])
     setResult(null)
+    setOffset(0)
     initialLoaded.current = false
     if (refreshTimer.current) {
       clearTimeout(refreshTimer.current)
       refreshTimer.current = null
     }
     api
-      .parseFromPath(agent, path)
+      .parseSession()
       .then((r) => {
-        for (const e of r.raw_events) {
+        if ('error' in (r as unknown as Record<string, unknown>)) {
+          // trace 尚未落盘：保持 loading，轮询会继续推进（stat exists=false 时
+          // readChunk 返回空且 parse 持续返回 trace_not_ready）。
+          setStatus('loading')
+          return
+        }
+        for (const e of r.raw_events ?? []) {
           const u = (e as Record<string, unknown>).uuid
           if (u !== undefined) seenUuids.current.add(String(u))
         }
         setResult(r)
-        setRawEvents((prev) => mergeRaw(prev, r.raw_events))
+        setRawEvents((prev) => mergeRaw(prev, r.raw_events ?? []))
         lastAppendAt.current = Date.now()
         lastRefreshAt.current = Date.now()
         initialLoaded.current = true
         setStatus('live')
       })
       .catch(() => setStatus('error'))
-  }, [path, reloadTick, agent])
+  }, [agent])
 
-  // 自动跟随最新活跃会话：当前文件安静 10s+ 且另有文件 15s 内有写入 → 切换
+  // 主轮询循环：stat 探测增长 → 增量 readChunk；暂停时只冻结消费不冻结心跳。
   useEffect(() => {
-    if (!path || !autoFollow) return
-    const timer = setInterval(async () => {
+    let closed = false
+    let offsetLocal = 0
+    const poll = async () => {
+      if (closed) return
       try {
-        const latest = await api.liveLatest(agent)
-        if (
-          latest.path !== path &&
-          Date.now() - lastAppendAt.current > 10_000 &&
-          Date.now() - latest.mtimeMs < 15_000
-        ) {
-          setPath(latest.path)
+        const stat = await api.stat()
+        if (!stat.exists) {
+          if (!initialLoaded.current) {
+            // 每轮重试初始加载（trace 可能刚落盘）。
+            initialLoaded.current = false
+            api
+              .parseSession()
+              .then((r) => {
+                if (closed || 'error' in (r as unknown as Record<string, unknown>)) return
+                for (const e of r.raw_events ?? []) {
+                  const u = (e as Record<string, unknown>).uuid
+                  if (u !== undefined) seenUuids.current.add(String(u))
+                }
+                setResult(r)
+                setRawEvents((prev) => mergeRaw(prev, r.raw_events ?? []))
+                initialLoaded.current = true
+                setStatus('live')
+              })
+              .catch(() => {})
+          }
+          return
+        }
+        if (stat.sizeBytes < offsetLocal) {
+          // 文件被截断/轮转（宿主侧不常见但保留语义）：从头重读。
+          offsetLocal = 0
+          setOffset(0)
+        }
+        if (stat.sizeBytes > offsetLocal && !pausedRef.current) {
+          const chunk = await api.readChunk(offsetLocal)
+          offsetLocal = chunk.nextOffset
+          setOffset(chunk.nextOffset)
+          appendChunk(chunk.text)
+          setStatus('live')
         }
       } catch {
-        // 单次失败忽略，下轮重试
-      }
-    }, 3000)
-    return () => clearInterval(timer)
-  }, [path, autoFollow, agent])
-
-  // SSE 订阅 + 轮询降级
-  useEffect(() => {
-    if (!path) return
-    let es: EventSource | null = null
-    let pollTimer: ReturnType<typeof setInterval> | null = null
-    let closed = false
-    let failures = 0
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-    const startPolling = () => {
-      if (closed || pollTimer) return
-      setStatus('polling')
-      const poll = async () => {
-        if (closed || pausedRef.current) return
-        // 轮询降级 = 节流全量刷新通道（同时更新 rawEvents 与完整 result）
-        doRefresh()
-      }
-      poll()
-      pollTimer = setInterval(poll, 2000)
-    }
-
-    const connect = () => {
-      if (closed) return
-      es = new EventSource(`/api/live?path=${encodeURIComponent(path)}`)
-      es.addEventListener('event', (e) => {
-        failures = 0
-        setStatus('live')
-        try {
-          appendEvents([JSON.parse((e as MessageEvent).data)])
-        } catch {
-          /* 非 JSON 帧忽略 */
-        }
-      })
-      es.onerror = () => {
-        es?.close()
-        es = null
-        if (closed) return
-        failures += 1
-        if (failures >= 3) {
-          startPolling()
-        } else {
-          reconnectTimer = setTimeout(connect, 1000 * failures)
-        }
+        /* 单次失败忽略，下轮重试 */
       }
     }
-
-    connect()
-
+    const timer = setInterval(poll, 500)
+    poll()
     return () => {
       closed = true
-      es?.close()
-      if (pollTimer) clearInterval(pollTimer)
-      if (reconnectTimer) clearTimeout(reconnectTimer)
+      clearInterval(timer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path])
+  }, [agent])
 
   return {
     rawEvents,
     result,
     status,
     paused,
-    path,
-    autoFollow,
-    follow: (p: string) => {
-      setAutoFollow(false)
-      setPath(p)
-    },
-    followLatest: () => {
-      setAutoFollow(true)
-      api
-        .liveLatest(agent)
-        .then((latest) => setPath(latest.path))
-        .catch(() => {})
-    },
+    offset,
     pause: () => setPaused(true),
     resume: () => {
       setPaused(false)
-      setReloadTick((t) => t + 1) // 暂停期间丢弃的事件经全量重载补齐
+      // 暂停期间丢弃的事件经全量重载补齐。
+      api
+        .parseSession()
+        .then((r) => {
+          if ('error' in (r as unknown as Record<string, unknown>)) return
+          for (const e of r.raw_events ?? []) {
+            const u = (e as Record<string, unknown>).uuid
+            if (u !== undefined) seenUuids.current.add(String(u))
+          }
+          setResult(r)
+          setRawEvents((prev) => mergeRaw(prev, r.raw_events ?? []))
+        })
+        .catch(() => {})
     },
   }
 }
 
-export function useHealth() {
-  return useQuery({ queryKey: ['health'], queryFn: api.health, retry: false })
-}
-
-/// Parse a trace, keyed by agent type + content byte-length + name
-/// (content hash would need crypto.subtle; length+name is enough for the
-/// cache to behave like st.cache_data on repeated uploads of the same file).
-export function useParse(agentType: AgentType | null, content: ArrayBuffer | null, name: string) {
+/// 浏览模式：宿主代扫的会话列表（单 agent 过滤）。
+export function useTraces(agent?: 'claude_code' | 'opencode') {
   return useQuery({
-    queryKey: ['parse', agentType, name, content?.byteLength ?? 0],
-    queryFn: () => api.parse(agentType!, content!),
-    enabled: agentType !== null && content !== null,
+    queryKey: ['traces', agent ?? ''],
+    queryFn: async () => {
+      const response = await api.list(agent)
+      return response.entries
+    },
   })
 }
 
-export function useEmbedded(sessionId: string | null, agentType: string | null) {
+/// 跨 agent 聚合的会话列表（trajectory 页）。
+export function useTrajectory() {
   return useQuery({
-    queryKey: ['embedded', sessionId, agentType],
-    queryFn: () => api.embedded(sessionId!, agentType!),
-    enabled: !!sessionId && !!agentType,
+    queryKey: ['trajectory'],
+    queryFn: async () => {
+      const [claude, opencode] = await Promise.all([api.list('claude_code'), api.list('opencode')])
+      return [
+        ...claude.entries.map((entry) => ({ ...entry, agent: 'claude_code' })),
+        ...opencode.entries.map((entry) => ({ ...entry, agent: 'opencode' })),
+      ].sort((a, b) => b.mtimeMs - a.mtimeMs)
+    },
   })
 }
 
-export function useTraces(root: string | undefined, agent?: 'claude_code' | 'opencode') {
+/// 解析一个会话：绑定会话（无参）或列表内命名会话。
+export function useParseSession(named?: { agent: string; sessionId: string } | null) {
   return useQuery({
-    queryKey: ['traces', root ?? '', agent ?? ''],
-    queryFn: () => api.traces(root, agent),
+    queryKey: ['parse-session', named?.agent ?? '', named?.sessionId ?? ''],
+    queryFn: () => api.parseSession(named ?? undefined),
+    enabled: named === undefined || named === null || (!!named.agent && !!named.sessionId),
   })
 }
 
-/// 单个 trace 文件的可读会话名（文件列表/会话下拉框展示用）。
-export function useTraceName(path: string | null, agent?: 'claude_code' | 'opencode') {
+/// 子会话下钻：按子会话 id 解析（子会话文件同样在宿主代读的列表中）。
+export function useSubagent(agent: AgentType, childSessionId: string | null) {
   return useQuery({
-    queryKey: ['trace-name', path ?? '', agent ?? ''],
-    queryFn: () => api.traceName(path!, agent),
-    enabled: !!path,
-    staleTime: 5 * 60_000,
-  })
-}
-
-/// 单个 trace 文件的会话列表元数据（状态/时长/agent 数/目录）。
-export function useSessionMeta(path: string | null, agent?: 'claude_code' | 'opencode') {
-  return useQuery({
-    queryKey: ['session-meta', path ?? '', agent ?? ''],
-    queryFn: () => api.sessionMeta(path!, agent),
-    enabled: !!path,
-    staleTime: 30_000, // 状态（进行中/已结束）需要较新鲜的数据
-  })
-}
-
-export function useSubagent(sessionId: string | null) {
-  return useQuery({
-    queryKey: ['subagent', sessionId],
-    queryFn: () => api.subagent(sessionId!),
-    enabled: !!sessionId,
+    queryKey: ['subagent', agent, childSessionId ?? ''],
+    queryFn: () => api.subagent(agent, childSessionId!),
+    enabled: !!childSessionId,
   })
 }
 
@@ -361,7 +314,7 @@ export function useCompare(
 ) {
   return useQuery({
     queryKey: ['compare', resultA, resultB, labelA, labelB].map((x) =>
-      typeof x === 'object' && x !== null ? (x as ParseResult).source + (x as ParseResult).raw_events.length : x,
+      typeof x === 'object' && x !== null ? (x as ParseResult).source : x,
     ),
     queryFn: () => api.compare(resultA!, resultB!, labelA, labelB),
     enabled: !!resultA && !!resultB,
@@ -370,17 +323,8 @@ export function useCompare(
 
 export function useWorkflowTree(result: ParseResult | null) {
   return useQuery({
-    queryKey: ['workflow-tree', result?.source ?? '', result?.raw_events.length ?? 0],
+    queryKey: ['workflow-tree', result?.source ?? ''],
     queryFn: () => api.workflowTree(result!),
     enabled: !!result,
-  })
-}
-
-export function useReactflow(enabled: boolean) {
-  return useQuery({
-    queryKey: ['reactflow'],
-    queryFn: api.reactflow,
-    enabled,
-    retry: false,
   })
 }

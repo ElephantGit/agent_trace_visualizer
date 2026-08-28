@@ -4,10 +4,10 @@
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useCompare, useParse } from '../../hooks'
+import { useCompare } from '../../hooks'
 import { api } from '../../api/client'
 import Plot from '../../components/Plot'
-import { DataTable, ErrorBanner, FileUpload, Info, Pills, TextInput } from '../../components/ui/primitives'
+import { DataTable, ErrorBanner, Info, TextInput } from '../../components/ui/primitives'
 import { download, toCsv } from '../../derive'
 import { useQuery } from '@tanstack/react-query'
 import type { AgentType, ParseResult, SummaryCard } from '../../api/types'
@@ -15,35 +15,31 @@ import type { AgentType, ParseResult, SummaryCard } from '../../api/types'
 const COLOR_BASELINE = '#ea4335'
 const COLOR_RTK = '#0a9e6a'
 
-type LoadMode = 'upload' | 'path'
+type LoadMode = 'path'
 
 export default function CompareView() {
   const [agentType, setAgentType] = useState<AgentType>('claude_code')
-  const [loadMode, setLoadMode] = useState<LoadMode>('upload')
-  const [bufA, setBufA] = useState<ArrayBuffer | null>(null)
-  const [bufB, setBufB] = useState<ArrayBuffer | null>(null)
+  const loadMode: LoadMode = 'path'
   const [pathA, setPathA] = useState('')
   const [pathB, setPathB] = useState('')
   const [labelA, setLabelA] = useState('无 RTK')
   const [labelB, setLabelB] = useState('有 RTK')
 
-  const uploadA = useParse(loadMode === 'upload' ? agentType : null, bufA, 'cmpA')
-  const uploadB = useParse(loadMode === 'upload' ? agentType : null, bufB, 'cmpB')
   const pathResultA = useQuery({
     queryKey: ['parse-from-path', 'cmpA', pathA, agentType],
-    queryFn: () => api.parseFromPath(agentType, pathA),
+    queryFn: () => api.parseSession({ agent: agentType, sessionId: pathA }),
     enabled: loadMode === 'path' && !!pathA,
   })
   const pathResultB = useQuery({
     queryKey: ['parse-from-path', 'cmpB', pathB, agentType],
-    queryFn: () => api.parseFromPath(agentType, pathB),
+    queryFn: () => api.parseSession({ agent: agentType, sessionId: pathB }),
     enabled: loadMode === 'path' && !!pathB,
   })
 
-  const resultA = (loadMode === 'upload' ? uploadA.data : pathResultA.data) as ParseResult | undefined
-  const resultB = (loadMode === 'upload' ? uploadB.data : pathResultB.data) as ParseResult | undefined
-  const errA = loadMode === 'upload' ? uploadA.error : pathResultA.error
-  const errB = loadMode === 'upload' ? uploadB.error : pathResultB.error
+  const resultA = pathResultA.data as ParseResult | undefined
+  const resultB = pathResultB.data as ParseResult | undefined
+  const errA = pathResultA.error
+  const errB = pathResultB.error
 
   const compare = useCompare(resultA ?? null, resultB ?? null, labelA || '无 RTK', labelB || '有 RTK')
 
@@ -64,23 +60,9 @@ export default function CompareView() {
         </label>
         <hr />
 
-        <Pills
-          options={['上传文件', '输入路径']}
-          selected={[loadMode === 'upload' ? '上传文件' : '输入路径']}
-          onChange={(next) => setLoadMode(next[0] === '输入路径' ? 'path' : 'upload')}
-        />
-
-        {loadMode === 'upload' ? (
-          <>
-            <FileUpload label="🔴 Baseline 文件" onFile={(b) => setBufA(b)} />
-            <FileUpload label="🟢 Experiment 文件" onFile={(b) => setBufB(b)} />
-          </>
-        ) : (
-          <>
-            <TextInput label="🔴 Baseline 文件路径" value={pathA} onChange={setPathA} />
-            <TextInput label="🟢 Experiment 文件路径" value={pathB} onChange={setPathB} />
-          </>
-        )}
+        <TextInput label="🔴 Baseline 会话 ID" value={pathA} onChange={setPathA} />
+        <TextInput label="🟢 Experiment 会话 ID" value={pathB} onChange={setPathB} />
+        <p className="muted">会话 ID 来自会话列表（宿主校验成员资格；路径从不离开宿主）。</p>
 
         <hr />
         <h4>标签设置</h4>
