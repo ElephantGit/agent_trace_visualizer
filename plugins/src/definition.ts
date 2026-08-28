@@ -1,82 +1,81 @@
-//! 插件进程的 workbench 定义：页面可见方法与页面契约在此定稿。
+//! 插件进程的 workbench 定义：页面可见方法与页面契约。
 //!
-//! D4 为骨架形态：每个方法返回文档化的占位形状，D5 将实现体替换为
-//! SessionCache（宿主 `ora/session/trace_*` 分块直读）与 wasm 核心（解析/派生）。
-//! 骨架自身即可安装：host-driver 下方法往返成功即通过验收。
+//! trace 内容经 `SessionCache` 由 Ora 宿主代读（session.trace 能力），
+//! 解析/派生全部在 wasm 核心内完成——本进程不触碰任何文件系统。
+//! 宿主错误（能力拒绝/未绑定/不可读）以 invoke rejection 形式透传给页面。
 
 import { defineWorkbenchPlugin } from "@ora-space/plugin-sdk";
 import type { WorkbenchCall, WorkbenchPlugin } from "@ora-space/plugin-sdk";
+import { core } from "./core.ts";
+import { SessionCache, type Surface } from "./session_cache.ts";
 
-/** 页面调用信封的统一解包（surface 透传给宿主请求时用于代际校验）。 */
-export interface SessionCall<Input = unknown> extends WorkbenchCall<Input> {
-  surface: {
-    instanceId: number;
-    generation: number;
+/** 从页面调用信封中提取 surface（宿主代际校验的凭据）。 */
+function surfaceOf(call: WorkbenchCall): Surface {
+  const surface = (call.surface ?? {}) as {
+    instanceId?: number;
+    generation?: number;
+  };
+  return {
+    instanceId: surface.instanceId ?? 0,
+    generation: surface.generation ?? 0,
   };
 }
 
-// ── 方法实现（D4 占位；形状即页面契约） ─────────────────────────
+/** 方法实现（可注入 cache 供测试）。 */
+export function buildHandlers(cache: SessionCache) {
+  return {
+    /** 绑定会话的 trace 元数据（宿主代读）。 */
+    "session/stat": (call: WorkbenchCall) => cache.stat(surfaceOf(call)),
 
-/** session/stat：绑定会话的 trace 元数据（宿主代读）。 */
-export function handleSessionStat(_call: SessionCall) {
-  // D5：plugin.request("ora/session/trace_stat", { surface, ... })
-  return { format: "", exists: false, sizeBytes: 0, mtimeMs: 0 };
-}
+    /** 按字节偏移分块读取（含子会话；offset 续读模型）。 */
+    "session/read": (call: WorkbenchCall) => {
+      const input = (call.input ?? {}) as {
+        offset?: number;
+        maxBytes?: number;
+        childSessionId?: string;
+      };
+      return cache.read(
+        surfaceOf(call),
+        input.offset ?? 0,
+        input.maxBytes ?? 1024 * 1024,
+        input.childSessionId,
+      );
+    },
 
-/** session/read：按字节偏移分块读取（含子会话）；offset 续读模型。 */
-export function handleSessionRead(_call: SessionCall) {
-  // D5：plugin.request("ora/session/trace_read", { surface, offset, maxBytes, childSessionId })
-  return { text: "", nextOffset: 0, done: true };
-}
+    /** 浏览模式：宿主代扫的会话列表。 */
+    "session/list": (call: WorkbenchCall) => {
+      const input = (call.input ?? {}) as { agent?: string };
+      return cache.list(surfaceOf(call), input.agent);
+    },
 
-/** session/list：浏览模式的会话列表（宿主代扫）。 */
-export function handleSessionList(_call: SessionCall) {
-  // D5：plugin.request("ora/session/trace_list", { surface, agent })
-  return { entries: [] };
-}
+    /** 绑定会话全文 → wasm 核心解析（剥离 raw_events 的 ParseResult）。 */
+    parse: (call: WorkbenchCall) => cache.parseBound(surfaceOf(call)),
 
-/** parse：把绑定会话的完整文本喂给 wasm 核心，返回剥离 raw_events 的 ParseResult。 */
-export function handleParse(_call: SessionCall) {
-  // D5：分块循环 read → wasm.parse(format, text)
-  return {};
-}
+    /** 绑定会话的统一回放步骤（事件在进程内还原，不经过桥接）。 */
+    replay: (call: WorkbenchCall) => cache.replayBound(surfaceOf(call)),
 
-/** replay：绑定会话的统一回放步骤（wasm 核心计算）。 */
-export function handleReplay(_call: SessionCall) {
-  // D5：wasm 内联计算（rawEvents 不经过桥接）
-  return { steps: [], pageSize: 10, contentMaxLength: 500, categories: [] };
-}
+    /** 五种 mermaid 图之一（wasm 核心计算）。 */
+    deriveMermaid: (call: WorkbenchCall) =>
+      core.deriveMermaid(call.input ?? {}),
 
-/** deriveMermaid：五种 mermaid 图之一（wasm 核心计算）。 */
-export function handleDeriveMermaid(_call: SessionCall) {
-  // D5：wasm.derive_mermaid(req)
-  return { src: "", totalUnits: 0, sampledUnits: 0, notice: null };
-}
+    /** 两个 ParseResult → 完整对比负载（wasm 核心计算）。 */
+    compare: (call: WorkbenchCall) => core.compare(call.input ?? {}),
 
-/** compare：两个 ParseResult → 完整对比负载（wasm 核心计算）。 */
-export function handleCompare(_call: SessionCall) {
-  // D5：wasm.compare(req)
-  return {};
-}
-
-/** workflowTree：ParseResult → 工作流树（wasm 核心计算）。 */
-export function handleWorkflowTree(_call: SessionCall) {
-  // D5：wasm.workflow_tree(result)
-  return null;
+    /** ParseResult → 工作流树（wasm 核心计算）。 */
+    workflowTree: (call: WorkbenchCall) => {
+      const input = (call.input ?? {}) as { result?: unknown };
+      return core.workflowTree(input.result);
+    },
+  };
 }
 
 /** 组装 workbench 定义；main.ts 与测试共用同一份方法表。 */
 export function buildDefinition(): WorkbenchPlugin {
-  return defineWorkbenchPlugin({
-    methods: {
-      "session/stat": handleSessionStat,
-      "session/read": handleSessionRead,
-      "session/list": handleSessionList,
-      parse: handleParse,
-      replay: handleReplay,
-      deriveMermaid: handleDeriveMermaid,
-      compare: handleCompare,
-      workflowTree: handleWorkflowTree,
-    },
+  const cache = new SessionCache();
+  const workbench = defineWorkbenchPlugin({
+    methods: buildHandlers(cache),
   });
+  // 注册完成后注入宿主请求通道；任何方法调用都发生在 run() 之后。
+  cache.attach((method, params) => workbench.plugin.request(method, params));
+  return workbench;
 }

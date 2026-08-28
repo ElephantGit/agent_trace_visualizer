@@ -5,14 +5,18 @@
     "@ora-space/plugin-sdk": "jsr:@ora-space/plugin-sdk@0.3.0"
   },
   "tasks": {
-    "check": "deno check src/main.ts src/definition_test.ts",
-    "test": "deno test src/",
+    "check": "deno check src/main.ts src/definition_test.ts src/session_cache.ts src/core.ts",
+    "test": "deno test --allow-read src/",
     "lint": "deno lint src",
     "format": "deno fmt src deno.json package.json orax.toml"
   },
   "compilerOptions": {
     "strict": true,
-    "lib": ["deno.ns", "dom", "esnext"]
+    "lib": [
+      "deno.ns",
+      "dom",
+      "esnext"
+    ]
   },
   "fmt": {
     "lineWidth": 80,
@@ -21,7 +25,9 @@
   },
   "lint": {
     "rules": {
-      "tags": ["recommended"]
+      "tags": [
+        "recommended"
+      ]
     }
   }
 }
