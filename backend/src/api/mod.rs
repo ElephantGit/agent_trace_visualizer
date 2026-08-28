@@ -1,21 +1,15 @@
-//! Axum router for the trace-viz API.
+//! Axum router for the trace-viz API（本地开发 harness）。
+
+//! 生产形态（dashboard 插件）不经过本 router：解析/派生全部内嵌 wasm 核心，
+//! trace 内容由宿主按偏移分块直读。这里仅保留纯函数端点供本地调试与上传解析。
 
 pub mod derive;
-pub mod embedded;
 pub mod errors;
-pub mod live;
 pub mod parse;
-pub mod traces;
 pub mod workflow;
 
 use axum::Router;
 use axum::routing::{get, post};
-
-/// Session ids are used to build locator paths — reject path separators and
-/// traversal sequences (trust boundary identical to legacy: a local dev tool).
-pub fn valid_session_id(id: &str) -> bool {
-    !id.is_empty() && !id.contains('/') && !id.contains('\\') && !id.contains("..")
-}
 
 pub fn router() -> Router {
     Router::new()
@@ -24,18 +18,6 @@ pub fn router() -> Router {
             get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
         )
         .route("/api/parse/{agent_type}", post(parse::parse_upload))
-        .route("/api/parse-from-path", post(parse::parse_from_path))
-        .route(
-            "/api/embedded/{session_id}",
-            get(embedded::embedded_handler),
-        )
-        .route("/api/traces", get(traces::traces_handler))
-        .route("/api/trace-name", get(traces::trace_name_handler))
-        .route("/api/session-meta", get(traces::session_meta_handler))
-        .route("/api/trajectory", get(traces::trajectory_handler))
-        .route("/api/live", get(live::live_handler))
-        .route("/api/live/latest", get(live::live_latest_handler))
-        .route("/api/subagent/{session_id}", post(parse::subagent_handler))
         .route("/api/derive/replay", post(derive::replay_handler))
         .route("/api/derive/mermaid", post(derive::mermaid_handler))
         .route("/api/compare", post(derive::compare_handler))

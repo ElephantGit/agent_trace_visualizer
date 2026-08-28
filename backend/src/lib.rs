@@ -8,7 +8,6 @@
 #[cfg(feature = "server")]
 pub mod api;
 pub mod derive;
-pub mod embedded;
 pub mod mermaid;
 pub mod models;
 pub mod parsers;
