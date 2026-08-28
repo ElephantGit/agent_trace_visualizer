@@ -32,7 +32,7 @@ export default function ClaudeBody({
   embedded?: boolean
   /// 实时监控模式：时间轴自动滚动 + 新行高亮；各 tab 随节流刷新更新
   live?: boolean
-  /// 实时模式下的即时事件流（SSE 毫秒级）；未提供时用 result.raw_events
+  /// 实时模式下的即时事件流（SSE 毫秒级）；未提供时用 result.raw_events ?? []
   liveEvents?: unknown[]
   /// 初始选中的 tab（实时模式默认落在时间轴）
   initialTab?: string
@@ -42,7 +42,7 @@ export default function ClaudeBody({
   const workflowTree = useWorkflowTree(result)
   const mermaid = useMermaid({
     kind: 'sequence-claude',
-    rawEvents: result.raw_events,
+    rawEvents: result.raw_events ?? [],
     isTranscript,
     maxEvents: 60,
     seed: 42,
@@ -66,7 +66,7 @@ export default function ClaudeBody({
 
   const overview = useMemo(() => {
     const eventTypes = new Map<string, number>()
-    for (const raw of result.raw_events) {
+    for (const raw of result.raw_events ?? []) {
       const t = String((raw as Record<string, unknown>).type ?? '?')
       eventTypes.set(t, (eventTypes.get(t) ?? 0) + 1)
     }
@@ -91,7 +91,7 @@ export default function ClaudeBody({
       {tab === 'replay' && (
         <ReplayView
           agent="claude_code"
-          rawEvents={result.raw_events}
+          rawEvents={result.raw_events ?? []}
           workflowRoot={workflowTree.data ?? null}
           result={result}
         />
@@ -104,7 +104,7 @@ export default function ClaudeBody({
       {tab === 'tokens' && <TokensTab result={result} />}
 
       {tab === 'timeline' && isTranscript && (
-        <TimelineTab rawEvents={liveEvents ?? result.raw_events} live={live} />
+        <TimelineTab rawEvents={liveEvents ?? result.raw_events ?? []} live={live} />
       )}
 
       {tab === 'tools' && (
@@ -131,7 +131,7 @@ export default function ClaudeBody({
 
       {tab === 'cost' && <CostTab result={result} />}
 
-      {tab === 'raw' && <RawEventsTab rawEvents={result.raw_events} keyPrefix="claude" />}
+      {tab === 'raw' && <RawEventsTab keyPrefix="claude" liveEvents={live ? liveEvents : null} />}
 
       {!embedded && (
         <>

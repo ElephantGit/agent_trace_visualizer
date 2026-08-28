@@ -100,7 +100,7 @@ export default function OpencodeBody({
 
       {tab === 'tools' && <ToolsTab result={result} />}
 
-      {tab === 'raw' && <RawEventsTab rawEvents={result.raw_events ?? []} keyPrefix="opencode" />}
+      {tab === 'raw' && <RawEventsTab keyPrefix="opencode" liveEvents={live ? liveEvents : null} />}
 
       {!embedded && (
         <>

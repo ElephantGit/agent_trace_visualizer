@@ -1,21 +1,62 @@
 // Paginated raw-event viewer with type filter, keyword search, and NDJSON
 // export (port of `raw_events_tab` in the legacy shared views).
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Expander, NumberInput, Pills, TextInput, DebugJson } from './ui/primitives'
 import { download, toNdjson } from '../derive'
+import { api } from '../api/client'
 
 const PAGE_SIZE = 50
 
+/// 原始事件视图：实时路径直接消费 liveEvents（useLiveStream 增量维护）；
+/// 浏览/嵌入路径按字节偏移顺序加载（加载更多模型，不整读大文件）。
 export default function RawEventsTab({
-  rawEvents,
   keyPrefix,
   typeField = 'type',
+  liveEvents,
 }: {
-  rawEvents: unknown[]
   keyPrefix: string
   typeField?: string
+  liveEvents?: unknown[] | null
 }) {
+  const [loaded, setLoaded] = useState<unknown[]>([])
+  const [offset, setOffset] = useState(0)
+  const [done, setDone] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const rawEvents = liveEvents ?? loaded
+
+  const loadMore = async () => {
+    if (loading || done) return
+    setLoading(true)
+    try {
+      const chunk = await api.readChunk(offset)
+      const events: unknown[] = []
+      for (const line of chunk.text.split('\n')) {
+        const trimmed = line.trim()
+        if (trimmed === '') continue
+        try {
+          events.push(JSON.parse(trimmed))
+        } catch {
+          /* 半行/畸形行跳过 */
+        }
+      }
+      setLoaded((prev) => [...prev, ...events])
+      setOffset(chunk.nextOffset)
+      setDone(chunk.done)
+    } catch {
+      /* 单次失败：保持按钮可重试 */
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 非实时路径：首屏自动加载第一批。
+  useEffect(() => {
+    if (liveEvents == null && loaded.length === 0 && !done) {
+      void loadMore()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const allTypes = useMemo(() => {
     const set = new Set<string>()
     for (const e of rawEvents) {
@@ -78,6 +119,11 @@ export default function RawEventsTab({
         )
       })}
 
+      {liveEvents == null && !done && (
+        <button className="btn" style={{ marginTop: 10 }} onClick={() => void loadMore()}>
+          {loading ? '加载中…' : `加载更多（已读 ${loaded.length.toLocaleString('en-US')} 条）`}
+        </button>
+      )}
       <hr />
       <button className="btn" onClick={() => download(`${keyPrefix}_filtered.ndjson`, toNdjson(filtered), 'application/x-ndjson')}>
         📥 下载筛选结果 NDJSON
