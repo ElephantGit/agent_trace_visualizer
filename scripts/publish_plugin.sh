@@ -13,7 +13,10 @@ cd "$ROOT"
 # 1. 构建 wasm 核心（release 纯计算形态 + Deno 胶水）
 ./scripts/build_wasm.sh
 
-# 2. 组装包目录
+# 2. 构建前端 SPA（HashRouter + 相对资产路径，适配宿主的精确文件服务）
+( cd "$ROOT/frontend" && npm run build )
+
+# 3. 组装包目录：SPA 构建产物替换占位 assets/
 rm -rf dist/plugin
 mkdir -p dist/plugin
 cp -r \
@@ -21,9 +24,10 @@ cp -r \
   plugins/package.json \
   plugins/deno.json \
   plugins/main.js \
-  plugins/assets \
   plugins/src \
   plugins/wasm \
   dist/plugin/
+mkdir -p dist/plugin/assets
+cp -r "$ROOT/frontend/dist/"* dist/plugin/assets/
 
 echo "plugin package assembled at dist/plugin/"

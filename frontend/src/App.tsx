@@ -4,7 +4,7 @@
 //   ?app_mode=compare   (camelCase variants also honored)
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Route, Routes, useSearchParams } from 'react-router-dom'
+import { HashRouter, Route, Routes, useSearchParams } from 'react-router-dom'
 import Landing from './pages/Landing'
 import EmbeddedView from './pages/EmbeddedView'
 import CompareView from './pages/compare/CompareView'
@@ -47,9 +47,9 @@ function Root() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <HashRouter>
         <Root />
-      </BrowserRouter>
+      </HashRouter>
     </QueryClientProvider>
   )
 }

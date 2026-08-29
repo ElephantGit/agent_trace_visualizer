@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // 插件包由宿主从 assets/ 精确文件服务（无 SPA fallback），
+  // 资产引用必须相对、路由用 HashRouter。
+  base: './',
   plugins: [react()],
   server: {
     port: 5173,
