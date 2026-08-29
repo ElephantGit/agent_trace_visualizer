@@ -64,14 +64,14 @@ export function buildHandlers(cache: SessionCache) {
     replay: (call: WorkbenchCall) => cache.replayBound(surfaceOf(call)),
 
     /** 五种 mermaid 图之一（wasm 核心计算）。 */
-    deriveMermaid: (call: WorkbenchCall) =>
+    derive_mermaid: (call: WorkbenchCall) =>
       core.deriveMermaid(call.input ?? {}),
 
     /** 两个 ParseResult → 完整对比负载（wasm 核心计算）。 */
     compare: (call: WorkbenchCall) => core.compare(call.input ?? {}),
 
     /** ParseResult → 工作流树（wasm 核心计算）。 */
-    workflowTree: (call: WorkbenchCall) => {
+    workflow_tree: (call: WorkbenchCall) => {
       const input = (call.input ?? {}) as { result?: unknown };
       return core.workflowTree(input.result);
     },

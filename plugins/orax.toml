@@ -19,9 +19,9 @@ methods = [
   # 纯计算：内容由 main.js 分块直读后喂给 wasm 核心
   "parse",
   "replay",
-  "deriveMermaid",
+  "derive_mermaid",
   "compare",
-  "workflowTree",
+  "workflow_tree",
 ]
 # 请求宿主代读会话 trace（只读）；安装时向用户披露。
 host_capabilities = ["session.trace"]

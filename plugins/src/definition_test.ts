@@ -138,14 +138,14 @@ Deno.test("纯计算方法透传给 wasm 核心", async () => {
   const cache = new SessionCache();
   const handlers = buildHandlers(cache);
 
-  const mermaid = await handlers.deriveMermaid(fakeCall({
+  const mermaid = await handlers.derive_mermaid(fakeCall({
     kind: "sequence-opencode",
     rawEvents: [{ type: "step.start", ts: 1 }],
     seed: 1,
   })) as Record<string, unknown>;
   check("src" in mermaid && typeof mermaid.src === "string", "mermaid 图产出");
 
-  const tree = await handlers.workflowTree(fakeCall({ result: null }));
+  const tree = await handlers.workflow_tree(fakeCall({ result: null }));
   check(tree === null, "无工作流为 null");
 });
 

@@ -60,7 +60,7 @@ export const api = {
     seed?: number
     data?: unknown
     result?: ParseResult
-  }) => invoke<MermaidResponse>('deriveMermaid', req),
+  }) => invoke<MermaidResponse>('derive_mermaid', req),
 
   /** 两个 ParseResult → 完整对比负载。 */
   compare: (
@@ -71,7 +71,7 @@ export const api = {
   ) => invoke<ComparePayload>('compare', { resultA, resultB, labelA, labelB }),
 
   /** ParseResult → 工作流树。 */
-  workflowTree: (result: ParseResult) => invoke<WorkflowNode | null>('workflowTree', { result }),
+  workflowTree: (result: ParseResult) => invoke<WorkflowNode | null>('workflow_tree', { result }),
 
   /** 子会话下钻：按子会话 id 解析（子会话文件同样在宿主代读的列表中）。 */
   subagent: (agent: AgentType, childSessionId: string) =>
