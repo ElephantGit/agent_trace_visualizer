@@ -26,6 +26,8 @@ export interface LiveStreamState {
   paused: boolean
   /// 已消费的字节偏移（readChunk 续读游标）
   offset: number
+  /// 初始加载失败的可读原因（宿主 rejection 归一后的消息）
+  errorMessage: string | null
   pause: () => void
   resume: () => void
 }
@@ -39,6 +41,7 @@ export function useLiveStream(agent: LiveAgent = 'claude_code'): LiveStreamState
   const [rawEvents, setRawEvents] = useState<unknown[]>([])
   const [result, setResult] = useState<ParseResult | null>(null)
   const [status, setStatus] = useState<LiveStatus>('idle')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [paused, setPaused] = useState(false)
   const [offset, setOffset] = useState(0)
   const pausedRef = useRef(paused)
@@ -136,6 +139,7 @@ export function useLiveStream(agent: LiveAgent = 'claude_code'): LiveStreamState
   // 初始全量加载：先解析（wasm），再把期间到达的增量事件合并进来。
   useEffect(() => {
     setStatus('loading')
+    setErrorMessage(null)
     seenUuids.current.clear()
     setRawEvents([])
     setResult(null)
@@ -165,7 +169,10 @@ export function useLiveStream(agent: LiveAgent = 'claude_code'): LiveStreamState
         initialLoaded.current = true
         setStatus('live')
       })
-      .catch(() => setStatus('error'))
+      .catch((err: unknown) => {
+        setErrorMessage(err instanceof Error ? err.message : String(err))
+        setStatus('error')
+      })
   }, [agent])
 
   // 主轮询循环：stat 探测增长 → 增量 readChunk；暂停时只冻结消费不冻结心跳。
@@ -227,6 +234,7 @@ export function useLiveStream(agent: LiveAgent = 'claude_code'): LiveStreamState
     status,
     paused,
     offset,
+    errorMessage,
     pause: () => setPaused(true),
     resume: () => {
       setPaused(false)

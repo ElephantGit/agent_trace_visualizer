@@ -16,7 +16,8 @@ const LIVE_STATUS_LABEL: Record<string, string> = {
 }
 
 export default function LiveMonitor({ agent, onExit }: { agent: LiveAgent; onExit: () => void }) {
-  const { rawEvents, result, status, paused, offset, pause, resume } = useLiveStream(agent)
+  const { rawEvents, result, status, paused, offset, errorMessage, pause, resume } =
+    useLiveStream(agent)
   const model = useMemo(
     () => (agent === 'opencode' ? buildTimelineOpencode(rawEvents) : buildTimeline(rawEvents)),
     [agent, rawEvents],
@@ -51,7 +52,15 @@ export default function LiveMonitor({ agent, onExit }: { agent: LiveAgent; onExi
         监控对象为面板绑定的会话：新事件由宿主代读、按字节偏移增量推送，节流全量解析由插件进程 wasm 核心完成。
       </p>
       {status === 'loading' && <p className="muted">会话刚建立，等待 trace 文件生成…</p>}
-      {status === 'error' && <p className="muted">会话加载失败，请稍后重试。</p>}
+      {status === 'error' && (
+        <div className="muted" style={{ margin: '6px 0' }}>
+          <p>会话加载失败：{errorMessage ?? '未知错误'}</p>
+          <p>
+            提示：Live 监控需要面板绑定会话——请从聊天会话打开 dashboard（面板自动绑定该会话）；
+            从插件入口打开的面板未绑定会话，请切换到 会话列表 浏览历史会话。
+          </p>
+        </div>
+      )}
       {body}
     </div>
   )
