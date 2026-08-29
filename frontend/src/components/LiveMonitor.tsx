@@ -56,8 +56,9 @@ export default function LiveMonitor({ agent, onExit }: { agent: LiveAgent; onExi
         <div className="muted" style={{ margin: '6px 0' }}>
           <p>会话加载失败：{errorMessage ?? '未知错误'}</p>
           <p>
-            提示：Live 监控需要面板绑定会话——请从聊天会话打开 dashboard（面板自动绑定该会话）；
-            从插件入口打开的面板未绑定会话，请切换到 会话列表 浏览历史会话。
+            提示：Live 监控需要面板绑定会话——请在聊天会话中打开 dashboard（顶栏 dashboard 按钮
+            或扩展面板入口，打开时自动绑定当前会话）。若已从会话打开仍提示未绑定，说明 agent
+            尚未接管该会话，等 agent 启动后重新打开面板；浏览历史会话请使用 会话列表。
           </p>
         </div>
       )}
