@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ParseResult } from '../../api/types'
 import { useMermaid } from '../../hooks'
+import { errMsg } from '../../api/client'
 import AgentSwitcher from '../../components/AgentSwitcher'
 import Plot from '../../components/Plot'
 import MermaidView from '../../components/MermaidView'
@@ -65,7 +66,7 @@ export default function GeminiView() {
           <hr />
           <h3>Gemini CLI</h3>
           <Info>插件模式下暂不支持 Gemini 上传解析；Gemini 无运行时插件提供 trace。</Info>
-          {error && <ErrorBanner>{String(error)}</ErrorBanner>}
+          {error && <ErrorBanner>{errMsg(error)}</ErrorBanner>}
           <p className="muted">
             本地调试形态仍可通过 dev harness 上传 telemetry.log（GEMINI_TELEMETRY_TRACES_ENABLED 生成的拼接 JSON 对象格式）。
           </p>

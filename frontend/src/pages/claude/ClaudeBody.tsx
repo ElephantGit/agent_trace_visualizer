@@ -27,6 +27,7 @@ export default function ClaudeBody({
   live = false,
   liveEvents,
   initialTab,
+  named,
 }: {
   result: ParseResult
   embedded?: boolean
@@ -36,6 +37,8 @@ export default function ClaudeBody({
   liveEvents?: unknown[]
   /// 初始选中的 tab（实时模式默认落在时间轴）
   initialTab?: string
+  /// 浏览模式的命名会话（原始数据 tab 分块直读用）；缺省走面板绑定会话
+  named?: { agent: string; sessionId: string } | null
 }) {
   const isTranscript = result.parse_debug.format === 'transcript'
   const [tab, setTab] = useState(initialTab ?? 'replay')
@@ -131,7 +134,9 @@ export default function ClaudeBody({
 
       {tab === 'cost' && <CostTab result={result} />}
 
-      {tab === 'raw' && <RawEventsTab keyPrefix="claude" liveEvents={live ? liveEvents : null} />}
+      {tab === 'raw' && (
+        <RawEventsTab keyPrefix="claude" liveEvents={live ? liveEvents : null} named={named ?? null} />
+      )}
 
       {!embedded && (
         <>

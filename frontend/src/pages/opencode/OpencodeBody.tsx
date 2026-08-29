@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import type { ParseResult } from '../../api/types'
 import { api } from '../../api/client'
+import { DEFAULT_OPENCODE_REF } from '../../api/agents'
 import { useMermaid, useWorkflowTree } from '../../hooks'
 import Plot, { plotColors } from '../../components/Plot'
 import MermaidView from '../../components/MermaidView'
@@ -32,6 +33,8 @@ export default function OpencodeBody({
   live = false,
   liveEvents,
   initialTab,
+  agentRef = DEFAULT_OPENCODE_REF,
+  named,
 }: {
   result: ParseResult
   embedded?: boolean
@@ -41,6 +44,10 @@ export default function OpencodeBody({
   liveEvents?: unknown[]
   /// 初始选中的 tab（实时模式默认落在时间轴）
   initialTab?: string
+  /// 父会话的宿主 agent 引用（subagent 下钻的命名解析用）
+  agentRef?: string
+  /// 浏览模式的命名会话（原始数据 tab 分块直读用）；缺省走面板绑定会话
+  named?: { agent: string; sessionId: string } | null
 }) {
   const [tab, setTab] = useState(initialTab ?? 'replay')
   const workflowTree = useWorkflowTree(result)
@@ -90,7 +97,7 @@ export default function OpencodeBody({
         <OverviewTab result={result} overview={overview} mermaidSrc={mermaid.data?.src} />
       )}
 
-      {tab === 'subagent' && <SubagentTab result={result} />}
+      {tab === 'subagent' && <SubagentTab result={result} agentRef={agentRef} />}
 
       {tab === 'tokens' && <TokensTab turns={turns} />}
 
@@ -100,7 +107,13 @@ export default function OpencodeBody({
 
       {tab === 'tools' && <ToolsTab result={result} />}
 
-      {tab === 'raw' && <RawEventsTab keyPrefix="opencode" liveEvents={live ? liveEvents : null} />}
+      {tab === 'raw' && (
+        <RawEventsTab
+          keyPrefix="opencode"
+          liveEvents={live ? liveEvents : null}
+          named={named ?? null}
+        />
+      )}
 
       {!embedded && (
         <>
@@ -222,13 +235,13 @@ interface SubagentView {
   available: boolean
 }
 
-function SubagentTab({ result }: { result: ParseResult }) {
+function SubagentTab({ result, agentRef }: { result: ParseResult; agentRef: string }) {
   const childQueries = useQueries({
     queries: result.subagents.map((s) => {
       const childId = String(s.childSessionID ?? '')
       return {
-        queryKey: ['subagent', childId],
-        queryFn: () => api.subagent('opencode', childId),
+        queryKey: ['subagent', agentRef, childId],
+        queryFn: () => api.subagent(agentRef, childId),
         enabled: !!childId,
         retry: false,
       }

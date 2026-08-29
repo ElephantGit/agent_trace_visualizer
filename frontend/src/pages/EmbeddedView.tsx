@@ -2,6 +2,7 @@
 // 插件模式下 Ora 已把面板绑定到会话：直接解析绑定会话（宿主代读 + wasm 核心）。
 
 import { useParseSession } from '../hooks'
+import { errMsg } from '../api/client'
 import { ErrorBanner, Info } from '../components/ui/primitives'
 import OpencodeBody from './opencode/OpencodeBody'
 import ClaudeBody from './claude/ClaudeBody'
@@ -18,7 +19,7 @@ export default function EmbeddedView({
     return <div className="muted">加载中…</div>
   }
   if (error) {
-    return <ErrorBanner>{String(error)}</ErrorBanner>
+    return <ErrorBanner>{errMsg(error)}</ErrorBanner>
   }
   if (!data) return null
 

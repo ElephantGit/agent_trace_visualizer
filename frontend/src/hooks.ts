@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from './api/client'
-import type { AgentType, ParseResult } from './api/types'
+import type { ParseResult } from './api/types'
 
 
 // ── 实时监控（轮询 + 字节偏移增量）────────────────────────────
@@ -247,8 +247,8 @@ export function useLiveStream(agent: LiveAgent = 'claude_code'): LiveStreamState
   }
 }
 
-/// 浏览模式：宿主代扫的会话列表（单 agent 过滤）。
-export function useTraces(agent?: 'claude_code' | 'opencode') {
+/// 浏览模式：宿主代扫的会话列表（单 agent 过滤，传宿主注册表中的 agent 引用）。
+export function useTraces(agent?: string) {
   return useQuery({
     queryKey: ['traces', agent ?? ''],
     queryFn: async () => {
@@ -258,16 +258,13 @@ export function useTraces(agent?: 'claude_code' | 'opencode') {
   })
 }
 
-/// 跨 agent 聚合的会话列表（trajectory 页）。
+/// 跨 agent 聚合的会话列表（trajectory 页）：一次全量列表，条目自带 agent 引用。
 export function useTrajectory() {
   return useQuery({
     queryKey: ['trajectory'],
     queryFn: async () => {
-      const [claude, opencode] = await Promise.all([api.list('claude_code'), api.list('opencode')])
-      return [
-        ...claude.entries.map((entry) => ({ ...entry, agent: 'claude_code' })),
-        ...opencode.entries.map((entry) => ({ ...entry, agent: 'opencode' })),
-      ].sort((a, b) => b.mtimeMs - a.mtimeMs)
+      const response = await api.list()
+      return response.entries
     },
   })
 }
@@ -281,8 +278,8 @@ export function useParseSession(named?: { agent: string; sessionId: string } | n
   })
 }
 
-/// 子会话下钻：按子会话 id 解析（子会话文件同样在宿主代读的列表中）。
-export function useSubagent(agent: AgentType, childSessionId: string | null) {
+/// 子会话下钻：按子会话 id 解析（子会话文件同样在宿主代读的列表中；agent 为宿主引用）。
+export function useSubagent(agent: string, childSessionId: string | null) {
   return useQuery({
     queryKey: ['subagent', agent, childSessionId ?? ''],
     queryFn: () => api.subagent(agent, childSessionId!),

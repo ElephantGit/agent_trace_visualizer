@@ -39,7 +39,8 @@ export default function SessionTable({
   agent: LiveAgent
   traces: TraceEntry[]
   selected: string | null
-  onSelect: (path: string) => void
+  /// 选中整条条目（调用方需要条目的宿主 agent 引用做命名解析）
+  onSelect: (entry: TraceEntry) => void
   /// 跨 agent 聚合视图：显示 Agent 列并提供 agent 过滤 chips
   showAgentColumn?: boolean
 }) {
@@ -220,7 +221,7 @@ export default function SessionTable({
                     t={t}
                     selected={selected === t.sessionId}
                     showAgent={showAgentColumn}
-                    onClick={() => onSelect(t.sessionId)}
+                    onClick={() => onSelect(t)}
                   />
                 ))}
               </tbody>

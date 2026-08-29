@@ -5,7 +5,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../api/client'
+import { api, errMsg } from '../api/client'
+import { DEFAULT_CLAUDE_REF, DEFAULT_OPENCODE_REF } from '../api/agents'
 import { useTrajectory } from '../hooks'
 import type { ParseResult, TraceEntry } from '../api/types'
 import SessionTable from '../components/SessionTable'
@@ -13,12 +14,11 @@ import AgentSwitcher from '../components/AgentSwitcher'
 import { ErrorBanner, Info } from '../components/ui/primitives'
 import ClaudeBody from './claude/ClaudeBody'
 import OpencodeBody from './opencode/OpencodeBody'
-import type { LiveAgent } from '../hooks'
 
 export default function TrajectoryView() {
   const navigate = useNavigate()
-  const [selected, setSelected] = useState<{ sessionId: string; agent: LiveAgent } | null>(null)
-  // 聚合列表：宿主代扫 claude_code + opencode 两个已声明 agent
+  const [selected, setSelected] = useState<TraceEntry | null>(null)
+  // 聚合列表：一次全量宿主列表（条目自带 agent 引用）
   const merged = useTrajectory()
   const entries = merged.data
 
@@ -30,7 +30,11 @@ export default function TrajectoryView() {
 
   const selectedResult = useQuery({
     queryKey: ['parse-session', selected?.agent, selected?.sessionId],
-    queryFn: () => api.parseSession({ agent: selected!.agent, sessionId: selected!.sessionId }),
+    queryFn: () =>
+      api.parseSession({
+        agent: selected!.agent ?? DEFAULT_CLAUDE_REF,
+        sessionId: selected!.sessionId,
+      }),
     enabled: !!selected,
   })
 
@@ -53,7 +57,7 @@ export default function TrajectoryView() {
             聚合当前用户所有本地 agent（Claude Code / Opencode）的会话，支持筛选与搜索。
             Gemini 的 telemetry 为手动上传日志，无本地目录可自动收集。
           </p>
-          {merged.isError && <ErrorBanner>{String(merged.error)}</ErrorBanner>}
+          {merged.isError && <ErrorBanner>{errMsg(merged.error)}</ErrorBanner>}
         </div>
         <AgentSwitcher />
       </aside>
@@ -65,12 +69,25 @@ export default function TrajectoryView() {
               ← 返回会话列表
             </button>
             {selectedResult.isLoading && <p className="muted">解析中…</p>}
-            {selectedResult.error && <ErrorBanner>{String(selectedResult.error)}</ErrorBanner>}
+            {selectedResult.error && <ErrorBanner>{errMsg(selectedResult.error)}</ErrorBanner>}
             {selectedResult.data &&
-              (selected.agent === 'opencode' ? (
-                <OpencodeBody result={selectedResult.data as ParseResult} />
+              ((selectedResult.data as ParseResult).source === 'opencode' ? (
+                <OpencodeBody
+                  result={selectedResult.data as ParseResult}
+                  agentRef={selected.agent ?? DEFAULT_OPENCODE_REF}
+                  named={{
+                    agent: selected.agent ?? DEFAULT_OPENCODE_REF,
+                    sessionId: selected.sessionId,
+                  }}
+                />
               ) : (
-                <ClaudeBody result={selectedResult.data as ParseResult} />
+                <ClaudeBody
+                  result={selectedResult.data as ParseResult}
+                  named={{
+                    agent: selected.agent ?? DEFAULT_CLAUDE_REF,
+                    sessionId: selected.sessionId,
+                  }}
+                />
               ))}
           </>
         ) : merged.isLoading ? (
@@ -83,11 +100,7 @@ export default function TrajectoryView() {
             traces={entriesSorted}
             selected={null}
             showAgentColumn
-            onSelect={(sessionId) => {
-              const t = entriesSorted.find((e) => e.sessionId === sessionId)
-              const agent: LiveAgent = t?.agent === 'opencode' ? 'opencode' : 'claude_code'
-              setSelected({ sessionId, agent })
-            }}
+            onSelect={setSelected}
           />
         )}
       </div>

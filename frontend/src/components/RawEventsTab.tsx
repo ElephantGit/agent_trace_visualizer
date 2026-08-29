@@ -14,10 +14,13 @@ export default function RawEventsTab({
   keyPrefix,
   typeField = 'type',
   liveEvents,
+  named,
 }: {
   keyPrefix: string
   typeField?: string
   liveEvents?: unknown[] | null
+  /// 浏览模式的命名会话（宿主校验成员资格）；缺省走面板绑定会话
+  named?: { agent: string; sessionId: string } | null
 }) {
   const [loaded, setLoaded] = useState<unknown[]>([])
   const [offset, setOffset] = useState(0)
@@ -29,7 +32,7 @@ export default function RawEventsTab({
     if (loading || done) return
     setLoading(true)
     try {
-      const chunk = await api.readChunk(offset)
+      const chunk = await api.readChunk(offset, undefined, undefined, named ?? undefined)
       const events: unknown[] = []
       for (const line of chunk.text.split('\n')) {
         const trimmed = line.trim()

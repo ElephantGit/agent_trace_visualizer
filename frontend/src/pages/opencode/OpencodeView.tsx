@@ -5,7 +5,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTraces } from '../../hooks'
-import { api } from '../../api/client'
+import { api, errMsg } from '../../api/client'
+import { DEFAULT_OPENCODE_REF, OPENCODE_AGENT_REFS } from '../../api/agents'
 import LiveMonitor from '../../components/LiveMonitor'
 import SessionTable from '../../components/SessionTable'
 import AgentSwitcher from '../../components/AgentSwitcher'
@@ -18,13 +19,18 @@ type PageMode = 'live' | 'file'
 
 export default function OpencodeView() {
   const [pageMode, setPageMode] = useState<PageMode>('live')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<TraceEntry | null>(null)
 
-  const traces = useTraces('opencode')
+  // 全量列表（条目自带宿主 agent 引用），客户端过滤 opencode 系（opencode/nga）。
+  const traces = useTraces()
   const pathResult = useQuery({
-    queryKey: ['parse-session', 'opencode', selectedId ?? ''],
-    queryFn: () => api.parseSession({ agent: 'opencode', sessionId: selectedId! }),
-    enabled: !!selectedId,
+    queryKey: ['parse-session', selected?.agent ?? '', selected?.sessionId ?? ''],
+    queryFn: () =>
+      api.parseSession({
+        agent: selected!.agent ?? DEFAULT_OPENCODE_REF,
+        sessionId: selected!.sessionId,
+      }),
+    enabled: !!selected,
   })
 
   const result: ParseResult | undefined = pathResult.data
@@ -32,7 +38,10 @@ export default function OpencodeView() {
   const isLoading = pathResult.isLoading
 
   const sorted = useMemo(
-    () => [...(traces.data ?? [])].sort((a: TraceEntry, b: TraceEntry) => b.mtimeMs - a.mtimeMs),
+    () =>
+      [...(traces.data ?? [])]
+        .filter((t) => OPENCODE_AGENT_REFS.includes(t.agent ?? ''))
+        .sort((a: TraceEntry, b: TraceEntry) => b.mtimeMs - a.mtimeMs),
     [traces.data],
   )
 
@@ -54,7 +63,7 @@ export default function OpencodeView() {
             className={`btn ${pageMode === 'file' ? 'btn-primary' : ''}`}
             style={{ width: '100%', marginTop: 6 }}
             onClick={() => {
-              setSelectedId(null)
+              setSelected(null)
               setPageMode('file')
             }}
           >
@@ -68,7 +77,7 @@ export default function OpencodeView() {
           ) : (
             <p className="muted">浏览历史会话进行事后分析；点击行加载该会话详情。</p>
           )}
-          {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
+          {error && pageMode === 'file' && <ErrorBanner>{errMsg(error)}</ErrorBanner>}
           <hr />
           <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
             📊 Trajectory
@@ -81,22 +90,29 @@ export default function OpencodeView() {
           <LiveMonitor agent="opencode" onExit={() => setPageMode('file')} />
         ) : (
           <>
-            {selectedId ? (
+            {selected ? (
               <>
                 <button
                   className="btn"
                   style={{ marginBottom: 12 }}
-                  onClick={() => setSelectedId(null)}
+                  onClick={() => setSelected(null)}
                 >
                   ← 返回会话列表
                 </button>
                 {isLoading && <p className="muted">解析中…</p>}
-                {error && <ErrorBanner>{String(error)}</ErrorBanner>}
+                {error && <ErrorBanner>{errMsg(error)}</ErrorBanner>}
                 {result && 'error' in (result as unknown as Record<string, unknown>) && (
                   <Info>该会话的 trace 尚未生成或不可读，请稍后重试。</Info>
                 )}
                 {result && !('error' in (result as unknown as Record<string, unknown>)) && (
-                  <OpencodeBody result={result} />
+                  <OpencodeBody
+                    result={result}
+                    agentRef={selected.agent ?? DEFAULT_OPENCODE_REF}
+                    named={{
+                      agent: selected.agent ?? DEFAULT_OPENCODE_REF,
+                      sessionId: selected.sessionId,
+                    }}
+                  />
                 )}
               </>
             ) : (
@@ -109,8 +125,8 @@ export default function OpencodeView() {
                   <SessionTable
                     agent="opencode"
                     traces={sorted.slice(0, 200)}
-                    selected={selectedId}
-                    onSelect={setSelectedId}
+                    selected={null}
+                    onSelect={setSelected}
                   />
                 )}
               </div>
