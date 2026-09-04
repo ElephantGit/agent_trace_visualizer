@@ -1,66 +1,127 @@
-// 会话回放——与时间轴同源的三类信息视图（buildTimeline / buildTimelineOpencode）：
-// 只展示 用户真实输入 / 模型文本输出 / 工具调用+结果（合并为一条），
-// 按轮次分组：用户输入 → 模型响应（含工具调用）→ 工具结果返回 = 一轮。
-// 工作流视图作为子页保留。
+// Session replay backed by the original Rust replay adapter. It preserves tool start/result
+// pairing, subagent/skill/MCP classification and the parser's own turn state machine.
 
-import { Fragment, useMemo, useState } from 'react'
-import type { TimelineEvent } from '../derive'
-import { buildTimeline, buildTimelineOpencode, formatDuration, grouped } from '../derive'
-import { Pagination, Info, DebugJson } from './ui/primitives'
+import { useMemo, useState } from 'react'
+import type { CategoryStyle } from '../api/types'
+import { useReplay, type LiveAgent } from '../hooks'
+import { ErrorBanner, Info, Pagination, Pills } from './ui/primitives'
+import ReplayStepCard from './ReplayStepCard'
 import WorkflowView from './WorkflowView'
 
-const KIND_META: Record<string, { icon: string; label: string; cls: string }> = {
-  user: { icon: '👤', label: '用户输入', cls: 'rp-user' },
-  llm: { icon: '🤖', label: '模型文本', cls: 'rp-llm' },
-  tool: { icon: '🔧', label: '工具', cls: 'rp-tool' },
+type ReplayPhase = 'user' | 'thinking' | 'output' | 'tools' | 'final'
+
+const PHASE_META: Record<ReplayPhase, { label: string; icon: string; hint: string }> = {
+  user: { label: '用户输入', icon: '↳', hint: '本轮任务' },
+  thinking: { label: '思考过程', icon: '◎', hint: '模型内部推理' },
+  output: { label: '模型输出', icon: '◌', hint: '模型生成的文本' },
+  tools: { label: '工具调用', icon: '⌘', hint: '调用与返回' },
+  final: { label: '最终结果', icon: '✓', hint: '会话收束' },
 }
 
-const PAGE_SIZE = 50
-
-function formatClock(ms: number): string {
-  const d = new Date(ms)
-  const pad = (n: number, w = 2) => String(n).padStart(w, '0')
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+function phaseFor(category: string): ReplayPhase {
+  if (category === 'user_input') return 'user'
+  if (category === 'thinking') return 'thinking'
+  if (category === 'llm_text') return 'output'
+  if (['tool_call', 'tool_result', 'subagent', 'skill', 'mcp', 'error'].includes(category)) return 'tools'
+  if (['result'].includes(category)) return 'final'
+  return 'output'
 }
 
-export default function ReplayView({
-  agent,
-  rawEvents,
-  workflowRoot,
-  result,
-}: {
-  agent: 'claude_code' | 'opencode'
+function groupBy<T>(items: T[], keyOf: (item: T) => string): { key: string; items: T[] }[] {
+  const groups: { key: string; items: T[] }[] = []
+  for (const item of items) {
+    const key = keyOf(item)
+    const current = groups[groups.length - 1]
+    if (current?.key === key) current.items.push(item)
+    else groups.push({ key, items: [item] })
+  }
+  return groups
+}
+
+function ReplayTurn({ turnNo, steps, styles }: { turnNo: number; steps: import('../api/types').ReplayStep[]; styles: Map<string, CategoryStyle> }) {
+  const phaseGroups = groupBy(steps, (step) => phaseFor(step.category))
+  return (
+    <section className="replay-turn" aria-label={`第 ${turnNo} 轮交互`}>
+      <div className="replay-turn-heading">
+        <span className="replay-turn-index">{String(turnNo).padStart(2, '0')}</span>
+        <div>
+          <div className="replay-turn-title">{`第 ${turnNo} 轮交互`}</div>
+          <div className="replay-turn-subtitle">{steps.length} 个事件 · 按发生顺序展示</div>
+        </div>
+      </div>
+      <div className="replay-turn-body">
+        {phaseGroups.map(({ key, items }) => {
+          const phase = key as ReplayPhase
+          const meta = PHASE_META[phase]
+          return (
+            <div className={`replay-phase replay-phase-${phase}`} key={`${turnNo}-${key}`}>
+              <div className="replay-phase-label">
+                <span className="replay-phase-icon">{meta.icon}</span>
+                <span>{meta.label}</span>
+                <span className="replay-phase-hint">{meta.hint}</span>
+                <span className="replay-phase-count">{items.length}</span>
+              </div>
+              <div className="replay-phase-items">
+                {items.map((step, index) => (
+                  <ReplayStepCard key={`${step.seq}-${index}`} step={step} style={styles.get(step.category)} phase={phase} />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+export default function ReplayView({ agent, rawEvents, workflowRoot, result }: {
+  agent: LiveAgent
   rawEvents: unknown[]
   workflowRoot?: import('../api/types').WorkflowNode | null
   result?: import('../api/types').ParseResult | null
 }) {
+  const replay = useReplay(agent, rawEvents)
+  const data = replay.data
   const [mode, setMode] = useState<'replay' | 'workflow'>('replay')
+  const [selected, setSelected] = useState<string[] | null>(null)
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
 
-  const model = useMemo(
-    () => (agent === 'opencode' ? buildTimelineOpencode(rawEvents) : buildTimeline(rawEvents)),
-    [agent, rawEvents],
+  const styles = useMemo(() => new Map<string, CategoryStyle>(data?.categories ?? []), [data?.categories])
+  // System initialization/session bookkeeping is useful for diagnostics, but does not belong
+  // in the user-facing task narrative. Normalize zero-valued turns so the first user message
+  // appears at the start of the first interaction and the final result closes the last one.
+  const replaySteps = useMemo(() => {
+    if (!data) return []
+    const meaningful = data.steps.filter((step) => step.category !== 'system')
+    const numberedTurns = meaningful.map((step) => step.turn_no).filter((turn) => turn > 0)
+    const firstTurn = numberedTurns.length > 0 ? Math.min(...numberedTurns) : 1
+    const lastTurn = numberedTurns.length > 0 ? Math.max(...numberedTurns) : firstTurn
+    return meaningful.map((step) => ({
+      ...step,
+      turn_no: step.turn_no > 0 ? step.turn_no : step.category === 'result' || step.category === 'error' ? lastTurn : firstTurn,
+    }))
+  }, [data])
+  const present = useMemo(
+    () => (data?.categories ?? []).filter(([key]) => replaySteps.some((step) => step.category === key)),
+    [data?.categories, replaySteps],
   )
-
-  // 注意：filtered 的 useMemo 必须在任何早退 return 之前声明——
-  // 切换工作流视图时早退会跳过其后的 hook，导致
-  // "Rendered fewer hooks than expected"（页面白屏）。
-  const filtered = useMemo(
-    () =>
-      model.events.filter(
-        (e) =>
-          !keyword ||
-          e.name.toLowerCase().includes(keyword.toLowerCase()) ||
-          e.tool_name.toLowerCase().includes(keyword.toLowerCase()),
-      ),
-    [model.events, keyword],
+  const activeCategories = useMemo(
+    () => selected ?? present.map(([key]) => key),
+    [selected, present],
   )
+  const filtered = useMemo(() => {
+    const active = new Set(activeCategories)
+    const query = keyword.toLowerCase()
+    return replaySteps.filter(
+      (step) => active.has(step.category) && (!query || JSON.stringify(step).toLowerCase().includes(query)),
+    )
+  }, [replaySteps, activeCategories, keyword])
 
   const viewSwitch = (
     <div className="pills" style={{ margin: '6px 0' }}>
       <button className={`pill ${mode === 'replay' ? 'pill-active' : ''}`} onClick={() => setMode('replay')}>
-        📜 会话回放
+        📜 事件回放
       </button>
       <button className={`pill ${mode === 'workflow' ? 'pill-active' : ''}`} onClick={() => setMode('workflow')}>
         🔀 工作流视图
@@ -69,147 +130,66 @@ export default function ReplayView({
   )
 
   if (mode === 'workflow') {
-    return (
-      <div>
-        {viewSwitch}
-        <WorkflowView root={workflowRoot ?? null} result={result ?? null} />
-      </div>
-    )
+    return <div>{viewSwitch}<WorkflowView root={workflowRoot ?? null} result={result ?? null} /></div>
   }
+  if (replay.isLoading) return <div>{viewSwitch}<p className="muted">正在生成会话回放…</p></div>
+  if (replay.error) return <div>{viewSwitch}<ErrorBanner>{String(replay.error)}</ErrorBanner></div>
+  if (!data || replaySteps.length === 0) return <div>{viewSwitch}<Info>暂无可展示的任务过程。</Info></div>
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(filtered.length / data.pageSize))
   const safePage = Math.min(page, totalPages)
-  const start = (safePage - 1) * PAGE_SIZE
-  const pageEvents = filtered.slice(start, start + PAGE_SIZE)
-
-  if (model.events.length === 0) {
-    return (
-      <div>
-        {viewSwitch}
-        <Info>暂无会话事件可供回放。</Info>
-      </div>
-    )
+  const start = (safePage - 1) * data.pageSize
+  const pageSteps = filtered.slice(start, start + data.pageSize)
+  const optionFor = (key: string) => {
+    const style = styles.get(key)!
+    const count = replaySteps.filter((step) => step.category === key).length
+    return `${style.icon} ${style.label} (${count})`
   }
 
   return (
     <div>
       {viewSwitch}
-      <p className="muted">
-        共 {model.events.length} 个事件 · {new Set(model.events.map((e) => e.turn_no)).size} 轮对话 —
-        每轮 = 用户输入 → 模型响应（含工具调用）→ 工具结果返回
-      </p>
+      <h3>📜 任务过程回放</h3>
+      <p className="muted">共 {replaySteps.length} 个步骤 · 展示从用户指令到最终结果的完整过程</p>
 
-      <div className="pills" style={{ margin: '6px 0' }}>
-        <input
-          type="text"
-          placeholder="关键词搜索"
-          value={keyword}
-          onChange={(e) => {
-            setKeyword(e.target.value)
+      {present.length > 1 && (
+        <div className="legend-chips">
+          {present.map(([key, style]) => (
+            <span key={key} className="legend-chip" style={{ background: style.header_bg, color: style.text, border: `1px solid ${style.border}` }}>
+              {style.icon} {style.label} ({replaySteps.filter((step) => step.category === key).length})
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="pills">
+        <input type="text" placeholder="关键词搜索" value={keyword} className="pill-input"
+          onChange={(event) => { setKeyword(event.target.value); setPage(1) }} />
+        <Pills
+          options={present.map(([key]) => optionFor(key))}
+          selected={activeCategories.map(optionFor)}
+          onChange={(options) => {
+            setSelected(options.flatMap((option) => {
+              const match = present.find(([key]) => optionFor(key) === option)
+              return match ? [match[0]] : []
+            }))
             setPage(1)
           }}
-          className="pill-input"
+          multi
         />
       </div>
 
-      <Pagination
-        page={safePage}
-        totalPages={totalPages}
-        total={filtered.length}
-        start={filtered.length === 0 ? 0 : start + 1}
-        end={Math.min(start + PAGE_SIZE, filtered.length)}
-        onPage={setPage}
-      />
+      {activeCategories.length === 0 && <Info>请至少选择一个事件类型以查看回放。</Info>}
 
-      {pageEvents.map((e, i) => {
-        const globalIdx = start + i
-        const prev = globalIdx > 0 ? filtered[globalIdx - 1] : null
-        const isTurnStart = !prev || prev.turn_no !== e.turn_no
-        return (
-          <Fragment key={`${e.turn_no}-${e.ts_ms}-${globalIdx}`}>
-            {isTurnStart && (
-              <div className="rp-turn-sep">
-                ━━━ 第 {e.turn_no} 轮 · {formatClock(e.ts_ms)} ━━━
-              </div>
-            )}
-            <RoundEventCard event={e} />
-          </Fragment>
-        )
-      })}
-    </div>
-  )
-}
+      <Pagination page={safePage} totalPages={totalPages} total={filtered.length}
+        start={filtered.length === 0 ? 0 : start + 1} end={Math.min(start + data.pageSize, filtered.length)}
+        onPage={setPage} />
 
-function RoundEventCard({ event }: { event: TimelineEvent }) {
-  const meta = KIND_META[event.kind] ?? KIND_META.user
-  const usage = (event.detail.usage ?? {}) as Record<string, number>
-  const detail = event.detail as Record<string, unknown>
-
-  const dur =
-    event.duration_ms !== null
-      ? event.duration_ms >= 1000
-        ? `${(event.duration_ms / 1000).toFixed(1)}s`
-        : `${event.duration_ms.toFixed(0)}ms`
-      : null
-
-  return (
-    <details
-      className={`step-card ${meta.cls}`}
-      open
-      style={{ marginLeft: Math.min(event.depth, 8) * 18 }}
-    >
-      <summary>
-        <span className="rp-kind-icon">{meta.icon}</span>
-        <span className="title-text">{event.name.slice(0, 120)}{event.is_error ? ' ❌' : ''}</span>
-        <span className="rp-kind-label">{meta.label}</span>
-        {event.tool_name && <span className="badge">🔧 {event.tool_name}</span>}
-        {dur && <span className="micro-tag">⏱️ {dur}</span>}
-        <span className="fold-toggle">展开 ▼</span>
-      </summary>
-      <div className="step-body">
-        {event.kind === 'user' && (
-          <pre className="debug-json">{typeof detail.text === 'string' ? detail.text : '（空输入）'}</pre>
-        )}
-
-        {event.kind === 'llm' && (
-          <>
-            <pre className="debug-json">
-              {typeof detail.text === 'string' && detail.text ? detail.text : '（无文本输出，仅发起工具调用）'}
-            </pre>
-            <div className="step-meta">
-              {event.detail.model ? `🧩 ${String(event.detail.model)}` : ''}
-              {event.detail.stop_reason ? ` · 停止原因: ${String(event.detail.stop_reason)}` : ''}
-              {usage.input_tokens !== undefined ? ` · 🎯 in=${grouped(Number(usage.input_tokens))}` : ''}
-              {usage.output_tokens !== undefined ? ` out=${grouped(Number(usage.output_tokens))}` : ''}
-            </div>
-          </>
-        )}
-
-        {event.kind === 'tool' && (
-          <>
-            <div className="step-tool-row">
-              <span className="step-tool-name">📥 输入参数</span>
-              {detail.input !== undefined ? (
-                <DebugJson value={detail.input} />
-              ) : (
-                <p className="muted">（无入参）</p>
-              )}
-            </div>
-            <h4>📤 执行结果</h4>
-            {typeof detail.output === 'string' ? (
-              <pre className="debug-json">{detail.output || '（空输出）'}</pre>
-            ) : (
-              <p className="muted">该工具调用没有对应的执行结果。</p>
-            )}
-            {event.status && (
-              <div className="step-meta">
-                {event.is_error ? '❌ ' : '✅ '}状态：{event.status}
-                {event.duration_ms !== null ? ` · 耗时 ${formatDuration(event.duration_ms)}` : ''}
-              </div>
-            )}
-          </>
-        )}
+      <div className="replay-stream">
+        {groupBy(pageSteps, (step) => String(step.turn_no)).map(({ key, items }) => (
+          <ReplayTurn key={key} turnNo={Number(key)} steps={items} styles={styles} />
+        ))}
       </div>
-    </details>
+    </div>
   )
 }

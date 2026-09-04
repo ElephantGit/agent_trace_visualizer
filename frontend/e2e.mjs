@@ -300,14 +300,6 @@ const exclHit = await page.evaluate(() => {
 if (!exclHit) throw new Error('hit rate must never exceed 100%')
 console.log(`7d. claude excludes-cache convention OK (raw input ${exclTrend.y}, hit ≤100%)`)
 
-// ── 8. Gemini upload ──────────────────────────────────────────
-await page.goto(`${BASE}/gemini`)
-await page.setInputFiles('input[type=file]', `${FIX}/sample_gemini.log`)
-await page.waitForSelector('text=解析调试面板', { timeout: 15000 })
-await page.waitForSelector('.js-plotly-plot', { timeout: 20000 })
-console.log('8. gemini debug panel + plot OK')
-await page.screenshot({ path: `${OUT}/8-gemini.png`, fullPage: true })
-
 // ── 9. Embedded (Ora contract) ────────────────────────────────
 await page.goto(`${BASE}/?session_id=e2e_sess&agent_type=opencode`)
 await page.waitForSelector('text=refactor dashboard', { timeout: 15000 })
@@ -337,9 +329,9 @@ await page.waitForSelector('text=Opencode')
 console.log('13. SPA fallback route OK')
 
 // ── 13b. Agent 切换器（各可视化页面左下角固定）──────────────────
-await page.click('.agent-switcher a[href="/gemini"]')
-await page.waitForURL('**/gemini')
-await page.waitForSelector('.agent-switcher .agent-switch-active >> text=Gemini', { timeout: 10000 })
+await page.click('.agent-switcher a[href="/claude-code"]')
+await page.waitForURL('**/claude-code')
+await page.waitForSelector('.agent-switcher .agent-switch-active >> text=Claude Code', { timeout: 10000 })
 await page.click('.agent-switcher a[href="/opencode"]')
 await page.waitForURL('**/opencode')
 console.log('13b. agent switcher (bottom-left) OK')

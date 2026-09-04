@@ -367,6 +367,29 @@ tbody tr:hover td { background: var(--surface-2); }
 .plot-loading { color: var(--muted); padding: 40px 0; text-align: center; }
 .js-plotly-plot { max-width: 100%; }
 
+/* ── Compact Token charts ──────────────────────────────────── */
+
+.token-chart-stack { display: flex; flex-direction: column; gap: 12px; padding: 2px 0 10px; }
+.token-chart-note {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.token-chart-panel {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 14px 5px;
+  box-shadow: var(--shadow-sm);
+}
+.token-chart-heading { margin-bottom: 0; }
+.token-chart-heading h3 { margin: 0; line-height: 1.35; }
+.token-chart-heading p { margin: 2px 0 0; line-height: 1.4; }
+.token-plot.plot-wrap { margin: 0; }
+
 /* ── Waterfall timeline (DevTools Network style) ─────────────── */
 
 .wf-toolbar {
@@ -587,6 +610,103 @@ tbody tr:hover td { background: var(--surface-2); }
 
 /* ── Replay step cards ──────────────────────────────────────── */
 
+/* Replay hierarchy: session → turn → semantic phase → event. */
+.replay-stream {
+  margin-top: 18px;
+  display: grid;
+  gap: 18px;
+}
+.replay-turn {
+  position: relative;
+  border: 1px solid #d8e1ec;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.replay-turn::before {
+  content: '';
+  position: absolute;
+  top: 54px;
+  bottom: 18px;
+  left: 27px;
+  width: 1px;
+  background: #d8e1ec;
+}
+.replay-turn-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  background: linear-gradient(100deg, #eef4fb, #f8fafc 72%);
+  border-bottom: 1px solid #e6edf5;
+}
+.replay-session .replay-turn-heading { background: #f8fafc; }
+.replay-turn-index {
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 0.7rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.replay-session .replay-turn-index { background: #94a3b8; }
+.replay-turn-title { font-weight: 700; letter-spacing: -0.01em; }
+.replay-turn-subtitle { color: var(--muted); font-size: 0.76em; }
+.replay-turn-body { padding: 5px 16px 16px 52px; }
+.replay-phase { position: relative; margin-top: 10px; }
+.replay-phase-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  color: #475569;
+  font-size: 0.78em;
+  font-weight: 700;
+}
+.replay-phase-icon {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  margin-left: -34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.9em;
+}
+.replay-phase-hint { color: var(--faint); font-weight: 400; }
+.replay-phase-count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: #eef2f7;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+.replay-phase-items { padding-left: 0; }
+.replay-phase-items .step-card { margin: 5px 0 0; border-radius: 8px; }
+.replay-phase-items .step-card > summary { padding: 8px 12px; border-left-width: 3px; font-size: 0.86em; }
+.replay-phase-items .step-card .step-body { padding: 10px 12px; }
+.replay-phase-thinking .replay-phase-label { color: #7c3aed; }
+.replay-phase-tools .replay-phase-label { color: #a16207; }
+.replay-phase-final .replay-phase-label { color: #15803d; }
+.step-phase-tools { box-shadow: inset 3px 0 #d6a723; }
+.step-phase-final { box-shadow: inset 3px 0 #27a36d; }
+@media (max-width: 620px) {
+  .replay-turn-body { padding-left: 38px; }
+  .replay-turn::before { left: 19px; }
+  .replay-phase-icon { margin-left: -27px; }
+  .replay-phase-hint { display: none; }
+}
+
 .step-card {
   border-radius: 10px;
   margin: 8px 0;
@@ -750,6 +870,35 @@ tbody tr:hover td { background: var(--surface-2); }
 .metric-card .m-value { font-size: 22px; font-weight: 700; color: var(--text); }
 .metric-card .m-label { font-size: 10px; }
 .metric-card .m-delta { font-size: 13px; font-weight: 600; }
+.overview-page { display: flex; flex-direction: column; gap: 16px; padding: 2px 0 12px; }
+.overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 4px 0 0;
+}
+.overview-metrics-six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.overview-metrics .metric-card { min-width: 0; padding: 14px 10px; }
+.overview-metrics .m-title { min-height: 2.8em; display: flex; align-items: flex-end; justify-content: center; }
+.overview-metrics .m-value { font-size: clamp(18px, 1.8vw, 24px); overflow-wrap: anywhere; }
+.metric-ok { color: var(--ok) !important; }
+.metric-warn { color: var(--warn) !important; }
+.overview-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.overview-grid > * { min-width: 0; }
+.overview-panel {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px 10px;
+  box-shadow: var(--shadow-sm);
+}
+.overview-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.overview-panel-heading h3 { margin: 0; }
+.overview-panel-heading p { margin: 2px 0 0; }
+.overview-sequence-panel { padding-bottom: 16px; }
+.overview-loading { color: var(--muted); text-align: center; padding: 48px 12px; }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .tool-output {
@@ -769,7 +918,19 @@ tbody tr:hover td { background: var(--surface-2); }
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } .shell { flex-direction: column; } .sidebar { position: static; flex: none; width: 100%; } }
+@media (max-width: 1180px) {
+  .overview-metrics, .overview-metrics-six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .two-col, .overview-grid { grid-template-columns: 1fr; }
+  .shell { flex-direction: column; }
+  .sidebar { position: static; flex: none; width: 100%; }
+}
+@media (max-width: 620px) {
+  .page { padding: 14px 12px; }
+  .overview-metrics, .overview-metrics-six { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-panel { padding-inline: 10px; }
+}
 
 /* Claude Code sidebar transcript list */
 .trace-btn {

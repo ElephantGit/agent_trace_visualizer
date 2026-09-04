@@ -4,8 +4,8 @@
 import { useMemo, useState } from 'react'
 import type { ParseResult } from '../../api/types'
 import { useMermaid, useWorkflowTree } from '../../hooks'
-import Plot, { plotColors } from '../../components/Plot'
-import MermaidView from '../../components/MermaidView'
+import Plot from '../../components/Plot'
+import OverviewCharts from '../../components/OverviewCharts'
 import ReplayView from '../../components/ReplayView'
 import RawEventsTab from '../../components/RawEventsTab'
 import ToolInspector from '../../components/ToolInspector'
@@ -19,6 +19,7 @@ import {
   mergeConsecutiveTurns,
   buildTimeline,
   grouped,
+  toolSuccessRate,
 } from '../../derive'
 
 export default function ClaudeBody({
@@ -83,6 +84,7 @@ export default function ClaudeBody({
       <h2>Claude Code 可视化</h2>
       <div className="muted" style={{ marginBottom: 6 }}>
         {isTranscript ? '交互会话记录（transcript JSONL）' : 'stream-json 流式输出'}
+        {result.session_info.model ? ` · ${result.session_info.model}` : ''}
         {result.parse_debug.cwd ? ` · cwd: ${String(result.parse_debug.cwd)}` : ''}
         {result.parse_debug.version ? ` · v${String(result.parse_debug.version)}` : ''}
       </div>
@@ -98,7 +100,12 @@ export default function ClaudeBody({
       )}
 
       {tab === 'overview' && (
-        <OverviewTab result={result} overview={overview} mermaidSrc={mermaid.data?.src} />
+        <OverviewTab
+          result={result}
+          overview={overview}
+          mermaidSrc={mermaid.data?.src}
+          mermaidLoading={mermaid.isLoading}
+        />
       )}
 
       {tab === 'tokens' && <TokensTab result={result} />}
@@ -149,40 +156,35 @@ function OverviewTab({
   result,
   overview,
   mermaidSrc,
+  mermaidLoading,
 }: {
   result: ParseResult
   overview: { eventTypes: [string, number][]; toolCounts: [string, number][] }
   mermaidSrc?: string
+  mermaidLoading: boolean
 }) {
   const ri = result.result_info
+  const successRate = toolSuccessRate(result.tool_calls)
+  const peakInput = result.turns.length > 0
+    ? result.turns.reduce((peak, turn) => Math.max(peak, turn.input_tokens), 0)
+    : ri.total_input
   return (
-    <div>
-      <div className="metric-row">
-        <div className="metric-card"><div className="m-title">模型</div><div className="m-value" style={{ fontSize: 15 }}>{result.session_info.model || '—'}</div></div>
-        <div className="metric-card"><div className="m-title">轮次</div><div className="m-value">{result.turns.length}</div></div>
-        <div className="metric-card"><div className="m-title">工具调用</div><div className="m-value">{result.tool_calls.length}</div></div>
-        <div className="metric-card"><div className="m-title">总 Input</div><div className="m-value">{fmtTok(ri.total_input)}</div></div>
-        <div className="metric-card"><div className="m-title">总 Output</div><div className="m-value">{fmtTok(ri.total_output)}</div></div>
-        <div className="metric-card"><div className="m-title">耗时</div><div className="m-value">{formatDuration(ri.duration_ms)}</div></div>
+    <div className="overview-page">
+      <div className="metric-row overview-metrics overview-metrics-six">
+        <div className="metric-card"><div className="m-title">LLM 推理轮次</div><div className="m-value">{result.turns.length}</div></div>
+        <div className="metric-card"><div className="m-title">工具调用总数</div><div className="m-value">{result.tool_calls.length}</div></div>
+        <div className="metric-card"><div className="m-title">峰值 Input Tokens</div><div className="m-value">{peakInput > 0 ? fmtTok(peakInput) : '—'}</div></div>
+        <div className="metric-card"><div className="m-title">总耗时</div><div className="m-value">{formatDuration(ri.duration_ms)}</div></div>
+        <div className="metric-card"><div className="m-title">总费用</div><div className="m-value">{ri.total_cost_usd > 0 ? `$${ri.total_cost_usd.toFixed(4)}` : '—'}</div></div>
+        <div className="metric-card"><div className="m-title">工具调用成功率</div><div className={`m-value ${result.tool_calls.length === 0 ? '' : successRate < 100 ? 'metric-warn' : 'metric-ok'}`}>{result.tool_calls.length > 0 ? `${successRate.toFixed(1)}%` : '—'}</div></div>
       </div>
-      <div className="two-col">
-        <div>
-          <h3>事件类型分布</h3>
-          <Plot
-            data={[{ type: 'bar', x: overview.eventTypes.map(([k]) => k), y: overview.eventTypes.map(([, v]) => v), marker: { color: overview.eventTypes.map((_, i) => plotColors(i)) } }]}
-            layout={{ height: 280, margin: { t: 20, b: 60 } }}
-          />
-        </div>
-        <div>
-          <h3>工具调用分布</h3>
-          <Plot
-            data={[{ type: 'pie', labels: overview.toolCounts.map(([k]) => k), values: overview.toolCounts.map(([, v]) => v), hole: 0.4 }]}
-            layout={{ height: 280, margin: { t: 20, b: 0 } }}
-          />
-        </div>
-      </div>
-      <h3>时序图</h3>
-      {mermaidSrc && <MermaidView src={mermaidSrc} />}
+      <OverviewCharts
+        eventTypes={overview.eventTypes}
+        toolCounts={overview.toolCounts}
+        mermaidSrc={mermaidSrc}
+        mermaidLoading={mermaidLoading}
+        sequenceTitle="会话时序图"
+      />
     </div>
   )
 }
@@ -249,38 +251,44 @@ function TokensTab({ result }: { result: ParseResult }) {
   }
 
   return (
-    <div>
-      <p className="muted">
-        已合并连续相同 input_tokens 的 Turn。原始 {rawCount} 个 → 合并后 {merged.length} 个有效数据点。
-      </p>
-      {excludesCache && (
-        <p className="muted">
-          该会话的 input_tokens 不含缓存命中（deepseek 类计费口径），缓存行为请见下方命中率图。
-        </p>
-      )}
+    <div className="token-chart-stack">
+      <div className="token-chart-note muted">
+        已合并连续相同 input_tokens 的 Turn：{rawCount} → {merged.length} 个有效数据点。
+        {excludesCache ? ' input_tokens 不含缓存命中；缓存行为见下方命中率图。' : ''}
+      </div>
 
-      <h3>Input / Output Tokens 趋势</h3>
-      <Plot
-        data={trendData}
-        layout={{ height: 380, margin: { t: 10, b: 40 }, xaxis: { title: 'Turn' }, yaxis: { title: 'Tokens（单次调用）' } }}
-      />
+      <section className="token-chart-panel">
+        <div className="token-chart-heading"><h3>Input / Output Tokens 趋势</h3></div>
+        <Plot
+          className="token-plot"
+          data={trendData}
+          layout={compactTokenLayout('Turn', { height: 310, legend: true })}
+        />
+      </section>
 
-      <hr />
-      <h3>Token 增量（上下文变化量）</h3>
-      <p className="muted">正值 = 上下文增长，负值 = context compaction 压缩释放</p>
-      <Plot
-        data={[
-          { type: 'bar', x: rows.map((_, i) => i), y: rows.map((r) => r.input_delta), name: 'Input Δ', marker: { color: '#1a73e8' } },
-          { type: 'bar', x: rows.map((_, i) => i), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#0a9e6a' } },
-        ]}
-        layout={{ barmode: 'group', height: 300, margin: { t: 10, b: 40 }, xaxis: { title: '有效数据点' }, yaxis: { title: 'Tokens' } }}
-      />
+      <section className="token-chart-panel">
+        <div className="token-chart-heading">
+          <h3>Token 增量（上下文变化量）</h3>
+          <p className="muted">正值为上下文增长，负值为 context compaction。</p>
+        </div>
+        <Plot
+          className="token-plot"
+          data={[
+            { type: 'bar', x: rows.map((_, i) => i), y: rows.map((r) => r.input_delta), name: 'Input Δ', marker: { color: '#1a73e8' } },
+            { type: 'bar', x: rows.map((_, i) => i), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#0a9e6a' } },
+          ]}
+          layout={{ ...compactTokenLayout('有效数据点', { height: 255, legend: true }), barmode: 'group' }}
+        />
+      </section>
 
       {hasCache && (
-        <>
-          <hr />
-          <h3>缓存命中率（Cache Read / 真实上下文窗口）</h3>
+        <section className="token-chart-panel">
+          <div className="token-chart-heading">
+            <h3>缓存命中率</h3>
+            <p className="muted">Cache Read / 真实上下文窗口</p>
+          </div>
           <Plot
+            className="token-plot"
             data={[
               {
                 type: 'bar',
@@ -291,12 +299,28 @@ function TokensTab({ result }: { result: ParseResult }) {
                 textposition: 'outside',
               },
             ]}
-            layout={{ height: 280, margin: { t: 40, b: 40 }, xaxis: { title: '有效数据点' }, yaxis: { title: 'Cache Hit %' }, showlegend: false }}
+            layout={compactTokenLayout('有效数据点', { height: 235, legend: false, yTitle: 'Cache Hit %', top: 24 })}
           />
-        </>
+        </section>
       )}
     </div>
   )
+}
+
+function compactTokenLayout(
+  xTitle: string,
+  options: { height: number; legend: boolean; yTitle?: string; top?: number },
+): Record<string, unknown> {
+  return {
+    height: options.height,
+    margin: { t: options.top ?? (options.legend ? 34 : 12), r: 16, b: 42, l: 62, pad: 0 },
+    showlegend: options.legend,
+    legend: options.legend
+      ? { orientation: 'h', x: 0, xanchor: 'left', y: 1.03, yanchor: 'bottom', font: { size: 11 } }
+      : undefined,
+    xaxis: { title: { text: xTitle, standoff: 5 }, automargin: true, ticklabelstandoff: 2 },
+    yaxis: { title: { text: options.yTitle ?? 'Tokens', standoff: 5 }, automargin: true, ticklabelstandoff: 2 },
+  }
 }
 
 // ── Subagent tab ──────────────────────────────────────────────

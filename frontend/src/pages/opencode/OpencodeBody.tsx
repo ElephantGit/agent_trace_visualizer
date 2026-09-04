@@ -7,7 +7,7 @@ import type { ParseResult } from '../../api/types'
 import { api } from '../../api/client'
 import { useMermaid, useWorkflowTree } from '../../hooks'
 import Plot, { plotColors } from '../../components/Plot'
-import MermaidView from '../../components/MermaidView'
+import OverviewCharts from '../../components/OverviewCharts'
 import ReplayView from '../../components/ReplayView'
 import RawEventsTab from '../../components/RawEventsTab'
 import ToolInspector from '../../components/ToolInspector'
@@ -87,7 +87,12 @@ export default function OpencodeBody({
       )}
 
       {tab === 'overview' && (
-        <OverviewTab result={result} overview={overview} mermaidSrc={mermaid.data?.src} />
+        <OverviewTab
+          result={result}
+          overview={overview}
+          mermaidSrc={mermaid.data?.src}
+          mermaidLoading={mermaid.isLoading}
+        />
       )}
 
       {tab === 'subagent' && <SubagentTab result={result} />}
@@ -118,77 +123,64 @@ function OverviewTab({
   result,
   overview,
   mermaidSrc,
+  mermaidLoading,
 }: {
   result: ParseResult
   overview: { eventTypes: [string, number][]; toolCounts: [string, number][] }
   mermaidSrc?: string
+  mermaidLoading: boolean
 }) {
   const ri = result.result_info
+  const successRate = toolSuccessRate(result.tool_calls)
+  const peakInput = result.turns.length > 0
+    ? result.turns.reduce((peak, turn) => Math.max(peak, turn.input_tokens), 0)
+    : ri.total_input
+  const modelCalls = result.raw_events.flatMap((raw) => {
+    const event = raw as Record<string, unknown>
+    if (event.type !== 'step.start') return []
+    const timestamp = Number(event.ts)
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return []
+    return [{ step: Number(event.globalStep ?? 0), timestamp: new Date(timestamp) }]
+  })
   return (
-    <div>
-      <div className="metric-row">
-        <div className="metric-card"><div className="m-title">模型</div><div className="m-value" style={{ fontSize: 15 }}>{result.session_info.model || '—'}</div></div>
-        <div className="metric-card"><div className="m-title">LLM 轮次</div><div className="m-value">{ri.num_turns || result.turns.length}</div></div>
-        <div className="metric-card"><div className="m-title">工具调用</div><div className="m-value">{result.tool_calls.length}</div></div>
-        <div className="metric-card"><div className="m-title">总 Input</div><div className="m-value">{fmtTok(ri.total_input)}</div></div>
-        <div className="metric-card"><div className="m-title">总 Output</div><div className="m-value">{fmtTok(ri.total_output)}</div></div>
-        <div className="metric-card"><div className="m-title">耗时</div><div className="m-value">{formatDuration(ri.duration_ms)}</div></div>
+    <div className="overview-page">
+      <div className="metric-row overview-metrics">
+        <div className="metric-card"><div className="m-title">LLM 推理轮次</div><div className="m-value">{result.turns.length}</div></div>
+        <div className="metric-card"><div className="m-title">工具调用总数</div><div className="m-value">{result.tool_calls.length}</div></div>
+        <div className="metric-card"><div className="m-title">峰值 Input Tokens</div><div className="m-value">{peakInput > 0 ? fmtTok(peakInput) : '—'}</div></div>
+        <div className="metric-card"><div className="m-title">Session 总持续时间</div><div className="m-value">{formatDuration(ri.duration_ms)}</div></div>
+        <div className="metric-card"><div className="m-title">工具调用成功率</div><div className={`m-value ${result.tool_calls.length === 0 ? '' : successRate < 100 ? 'metric-warn' : 'metric-ok'}`}>{result.tool_calls.length > 0 ? `${successRate.toFixed(1)}%` : '—'}</div></div>
       </div>
 
-      <div className="two-col">
-        <div>
-          <h3>事件类型分布</h3>
-          <Plot
-            data={[
-              {
-                type: 'bar',
-                x: overview.eventTypes.map(([k]) => k),
-                y: overview.eventTypes.map(([, v]) => v),
-                marker: { color: overview.eventTypes.map((_, i) => plotColors(i)) },
-              },
-            ]}
-            layout={{ height: 300, margin: { t: 20, b: 60 }, yaxis: { title: '次数' } }}
-          />
-        </div>
-        <div>
-          <h3>工具调用分布</h3>
-          <Plot
-            data={[
-              {
-                type: 'pie',
-                labels: overview.toolCounts.map(([k]) => k),
-                values: overview.toolCounts.map(([, v]) => v),
-                hole: 0.4,
-              },
-            ]}
-            layout={{ height: 300, margin: { t: 20, b: 0 } }}
-          />
-        </div>
-      </div>
-
-      <h3>时序图</h3>
-      {mermaidSrc && <MermaidView src={mermaidSrc} notice={null} />}
-
-      <h3>模型调用时序</h3>
-      <Plot
-        data={[
-          {
-            type: 'scatter',
-            mode: 'lines+markers',
-            x: result.turns.map((t) => t.turn_no),
-            y: result.turns.map((t) => t.input_tokens),
-            name: 'Input',
-          },
-          {
-            type: 'scatter',
-            mode: 'lines+markers',
-            x: result.turns.map((t) => t.turn_no),
-            y: result.turns.map((t) => t.output_tokens),
-            name: 'Output',
-          },
-        ]}
-        layout={{ height: 260, margin: { t: 20, b: 40 }, xaxis: { title: 'Step' }, yaxis: { title: 'Tokens' } }}
+      <OverviewCharts
+        eventTypes={overview.eventTypes}
+        toolCounts={overview.toolCounts}
+        mermaidSrc={mermaidSrc}
+        mermaidLoading={mermaidLoading}
+        sequenceTitle="主要步骤时序图"
       />
+
+      {modelCalls.length > 0 && (
+        <section className="overview-panel">
+          <div className="overview-panel-heading">
+            <div>
+              <h3>模型调用时间</h3>
+              <p className="muted">每个点表示一次 step.start，便于观察调用节奏与停顿。</p>
+            </div>
+          </div>
+          <Plot
+            data={[{
+              type: 'scatter',
+              mode: 'markers',
+              x: modelCalls.map((call) => call.timestamp),
+              y: modelCalls.map((call) => call.step),
+              marker: { size: 9, color: '#1a73e8' },
+              hovertemplate: 'Step %{y}<br>%{x|%H:%M:%S.%L}<extra></extra>',
+            }]}
+            layout={{ height: 250, margin: { t: 8, r: 24, b: 52, l: 58 }, xaxis: { title: '时间' }, yaxis: { title: 'Global Step', dtick: 1 } }}
+          />
+        </section>
+      )}
     </div>
   )
 }
@@ -451,32 +443,45 @@ function TokensTab({ turns }: { turns: ParseResult['turns'] }) {
   }
 
   return (
-    <div>
-      <h3>Token 消耗演进趋势</h3>
-      <p className="muted">
-        {excludesCache
-          ? '该会话的 input_tokens 不含缓存命中（deepseek 类计费口径），缓存行为请见下方命中率图。'
-          : 'Cache Read / Cache Creation 为单步值（每步从提示缓存读取的量，与 Input 窗口同量级）。'}
-      </p>
-      <Plot
-        data={trendData}
-        layout={{ height: 380, margin: { t: 10, b: 40 }, xaxis: { title: 'Step' }, yaxis: { title: 'Tokens' } }}
-      />
-      <hr />
-      <h3>每轮 Token 增量（Step 差值）</h3>
-      <Plot
-        data={[
-          { type: 'bar', x: rows.map((r) => r.turn_no), y: rows.map((r) => r.input_delta), name: 'Input 增量', marker: { color: '#1a73e8' } },
-          { type: 'bar', x: rows.map((r) => r.turn_no), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#0a9e6a' } },
-        ]}
-        layout={{ barmode: 'group', height: 300, margin: { t: 10, b: 40 }, xaxis: { title: 'Step' }, yaxis: { title: 'Tokens' } }}
-      />
+    <div className="token-chart-stack">
+      <section className="token-chart-panel">
+        <div className="token-chart-heading">
+          <h3>Token 消耗演进趋势</h3>
+          <p className="muted">
+            {excludesCache
+              ? 'input_tokens 不含缓存命中；缓存行为见下方命中率图。'
+              : 'Cache Read / Cache Creation 为每个 Step 的单步值。'}
+          </p>
+        </div>
+        <Plot
+          className="token-plot"
+          data={trendData}
+          layout={compactTokenLayout('Step', { height: 310, legend: true })}
+        />
+      </section>
+
+      <section className="token-chart-panel">
+        <div className="token-chart-heading">
+          <h3>每轮 Token 增量（Step 差值）</h3>
+        </div>
+        <Plot
+          className="token-plot"
+          data={[
+            { type: 'bar', x: rows.map((r) => r.turn_no), y: rows.map((r) => r.input_delta), name: 'Input 增量', marker: { color: '#1a73e8' } },
+            { type: 'bar', x: rows.map((r) => r.turn_no), y: rows.map((r) => r.output_tokens), name: 'Output', marker: { color: '#0a9e6a' } },
+          ]}
+          layout={{ ...compactTokenLayout('Step', { height: 255, legend: true }), barmode: 'group' }}
+        />
+      </section>
 
       {hasCacheRead && (
-        <>
-          <hr />
-          <h3>缓存命中率（Cache Read / 真实上下文窗口）</h3>
+        <section className="token-chart-panel">
+          <div className="token-chart-heading">
+            <h3>缓存命中率</h3>
+            <p className="muted">Cache Read / 真实上下文窗口</p>
+          </div>
           <Plot
+            className="token-plot"
             data={[
               {
                 type: 'bar',
@@ -487,12 +492,28 @@ function TokensTab({ turns }: { turns: ParseResult['turns'] }) {
                 textposition: 'outside',
               },
             ]}
-            layout={{ height: 280, margin: { t: 40, b: 40 }, xaxis: { title: 'Step' }, yaxis: { title: 'Cache Hit %' }, showlegend: false }}
+            layout={compactTokenLayout('Step', { height: 235, legend: false, yTitle: 'Cache Hit %', top: 24 })}
           />
-        </>
+        </section>
       )}
     </div>
   )
+}
+
+function compactTokenLayout(
+  xTitle: string,
+  options: { height: number; legend: boolean; yTitle?: string; top?: number },
+): Record<string, unknown> {
+  return {
+    height: options.height,
+    margin: { t: options.top ?? (options.legend ? 34 : 12), r: 16, b: 42, l: 62, pad: 0 },
+    showlegend: options.legend,
+    legend: options.legend
+      ? { orientation: 'h', x: 0, xanchor: 'left', y: 1.03, yanchor: 'bottom', font: { size: 11 } }
+      : undefined,
+    xaxis: { title: { text: xTitle, standoff: 5 }, automargin: true, ticklabelstandoff: 2 },
+    yaxis: { title: { text: options.yTitle ?? 'Tokens', standoff: 5 }, automargin: true, ticklabelstandoff: 2 },
+  }
 }
 
 // ── Tools tab ─────────────────────────────────────────────────

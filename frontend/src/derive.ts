@@ -542,23 +542,33 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
     ts_ms: number
     name: string
     input: unknown
+    global_step: number
   }
   const toolStarts = new Map<string, OcToolUse>()
+  const toolStartsByStep = new Map<string, OcToolUse[]>()
   const stepUsage = new Map<number, Record<string, number>>()
   const stepReason = new Map<number, string>()
+  const stepStarts = new Map<number, number>()
 
   for (const raw of rawEvents) {
     const evt = raw as Record<string, unknown>
     const type = (evt.type as string) ?? ''
     const tsMs = typeof evt.ts === 'number' ? evt.ts : null
-    if (type === 'tool.start') {
+    if (type === 'step.start') {
+      const gs = Number(evt.globalStep ?? -1)
+      if (gs >= 0 && tsMs !== null) stepStarts.set(gs, tsMs)
+    } else if (type === 'tool.start') {
       const id = String(evt.toolCallId ?? '')
       if (id && tsMs !== null) {
-        toolStarts.set(id, {
+        const start: OcToolUse = {
           ts_ms: tsMs,
           name: String(evt.tool ?? 'tool'),
           input: evt.args,
-        })
+          global_step: Number(evt.globalStep ?? -1),
+        }
+        toolStarts.set(id, start)
+        const key = `${start.global_step}:${start.name}`
+        toolStartsByStep.set(key, [...(toolStartsByStep.get(key) ?? []), start])
       }
     } else if (type === 'step.finish') {
       const gs = Number(evt.globalStep ?? -1)
@@ -603,7 +613,8 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
       if (!model && m) model = m
       continue
     }
-    // 1. 用户输入（插件当前版本不产生 text.user，兼容性保留）
+    // 1. 用户输入。兼容 trace_logger 将首条 prompt 记录成
+    // text.assistant + stepIndex=0 的历史格式。
     if (type === 'text.user') {
       const text = String(evt.text ?? '').trim()
       if (!text) continue
@@ -623,11 +634,32 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
       })
       continue
     }
+    if (type === 'text.assistant' && Number(evt.stepIndex ?? -1) === 0 && evt.globalStep === undefined) {
+      const text = String(evt.text ?? '').trim()
+      if (!text) continue
+      currentStep = Math.max(1, currentStep)
+      push({
+        ts_ms: tsMs,
+        ts,
+        kind: 'user',
+        turn_no: currentStep,
+        depth: 0,
+        name: text.slice(0, 60).replace(/\n/g, ' '),
+        status: '',
+        duration_ms: null,
+        display_duration_ms: null,
+        tool_name: '',
+        is_error: false,
+        detail: { evt, text },
+      })
+      continue
+    }
     // 2. 模型文本输出
     if (type === 'text.assistant') {
       const text = String(evt.text ?? '').trim()
       if (!text) continue
       const gs = Number(evt.globalStep ?? currentStep)
+      const stepStart = stepStarts.get(gs)
       push({
         ts_ms: tsMs,
         ts,
@@ -637,7 +669,7 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
         name: text.slice(0, 60).replace(/\n/g, ' '),
         status: stepReason.get(gs) ?? '',
         duration_ms: null,
-        display_duration_ms: null,
+        display_duration_ms: stepStart === undefined ? null : Math.max(0, tsMs - stepStart),
         tool_name: '',
         is_error: false,
         detail: {
@@ -653,7 +685,15 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
     // 3. 工具调用+结果（合并一行）
     if (type === 'tool.finish') {
       const id = String(evt.toolCallId ?? '')
-      const start = toolStarts.get(id)
+      const fallbackKey = `${Number(evt.globalStep ?? currentStep)}:${String(evt.tool ?? 'tool')}`
+      const fallbackQueue = toolStartsByStep.get(fallbackKey) ?? []
+      let start = toolStarts.get(id)
+      if (start) {
+        const index = fallbackQueue.indexOf(start)
+        if (index >= 0) fallbackQueue.splice(index, 1)
+      } else {
+        start = fallbackQueue.shift()
+      }
       const startTs = start?.ts_ms ?? tsMs
       const rawDur = evt.duration
       const duration =
@@ -675,7 +715,7 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
         detail: {
           evt,
           tool_id: id,
-          input: start?.input,
+          input: start?.input ?? evt.args,
           output: joinToolOutput(evt.output),
           is_error: Boolean(evt.isError),
           start: startTs,
@@ -687,6 +727,9 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
     // 其余事件类型（reasoning / patch / session.* 等）不进入时间轴
   }
 
+  const latencies = events
+    .filter((event) => event.kind === 'llm' && event.display_duration_ms !== null)
+    .map((event) => Number(event.display_duration_ms))
   const toolNames = [...new Set(events.filter((e) => e.kind === 'tool').map((e) => e.tool_name))]
   return {
     events,
@@ -698,8 +741,8 @@ export function buildTimelineOpencode(rawEvents: unknown[]): TimelineModel {
       user_count: events.filter((e) => e.kind === 'user').length,
       llm_count: events.filter((e) => e.kind === 'llm').length,
       tool_count: events.filter((e) => e.kind === 'tool').length,
-      avg_latency_ms: 0,
-      max_latency_ms: 0,
+      avg_latency_ms: latencies.length ? latencies.reduce((sum, value) => sum + value, 0) / latencies.length : 0,
+      max_latency_ms: latencies.length ? Math.max(...latencies) : 0,
     },
   }
 }
