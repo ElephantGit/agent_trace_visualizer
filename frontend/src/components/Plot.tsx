@@ -24,13 +24,34 @@ export default function Plot({
 }) {
   const config: Partial<Config> = { displaylogo: false, responsive: true }
   const normalized = normalizeLayout(layout) as Partial<Layout>
+  const height = finitePlotHeight(normalized.height)
   return (
-    <div className={`plot-wrap ${className ?? ''}`}>
+    <div
+      className={`plot-wrap ${className ?? ''}`}
+      style={height === undefined ? undefined : { height }}
+    >
       <Suspense fallback={<div className="plot-loading">图表加载中…</div>}>
-        <PlotlyPlot data={data} layout={{ ...normalized, autosize: true }} config={config} useResizeHandler />
+        <PlotlyPlot
+          data={data}
+          layout={{ ...normalized, autosize: true }}
+          config={config}
+          style={{ width: '100%', height: height ?? '100%' }}
+          useResizeHandler
+        />
       </Suspense>
     </div>
   )
+}
+
+// Ora renders workbench pages in a resizable WebView. Plotly's resize handler
+// otherwise treats the WebView's available height as the chart height even
+// when layout.height is set, stretching the chart card to nearly a viewport.
+// Giving both DOM layers the same explicit height keeps height deterministic
+// while Plotly continues to resize responsively along the width axis.
+function finitePlotHeight(height: Partial<Layout>['height']): number | undefined {
+  return typeof height === 'number' && Number.isFinite(height) && height > 0
+    ? height
+    : undefined
 }
 
 /// Accept `xaxis: { title: 'Turn' }` (string) and rewrite to the object form
