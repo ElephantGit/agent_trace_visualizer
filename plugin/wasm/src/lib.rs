@@ -3,18 +3,18 @@
 //! Trace bytes are obtained exclusively through Ora's opaque trace bridge. This crate receives
 //! JSON/text already in browser memory and returns JSON, so it has no filesystem or HTTP access.
 
-#[path = "../../../backend/src/models.rs"]
-mod models;
-#[path = "../../../backend/src/util.rs"]
-mod util;
-#[path = "../../../backend/src/tiktoken.rs"]
-mod tiktoken;
-#[path = "../../../backend/src/parsers/mod.rs"]
-mod parsers;
 #[path = "../../../backend/src/derive/mod.rs"]
 mod derive;
 #[path = "../../../backend/src/mermaid.rs"]
 mod mermaid;
+#[path = "../../../backend/src/models.rs"]
+mod models;
+#[path = "../../../backend/src/parsers/mod.rs"]
+mod parsers;
+#[path = "../../../backend/src/tiktoken.rs"]
+mod tiktoken;
+#[path = "../../../backend/src/util.rs"]
+mod util;
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -63,7 +63,11 @@ pub fn replay(agent_type: &str, raw_events: &str) -> Result<String, JsValue> {
     let steps = match agent_type {
         "opencode" => derive::replay::opencode_to_replay_steps(&raw_events),
         "claude_code" => derive::replay::claude_code_to_replay_steps(&raw_events),
-        _ => return Err(JsValue::from_str("replay is unsupported for this trace format")),
+        _ => {
+            return Err(JsValue::from_str(
+                "replay is unsupported for this trace format",
+            ));
+        }
     };
     as_json(json!({
         "steps": steps,
@@ -78,11 +82,13 @@ pub fn replay(agent_type: &str, raw_events: &str) -> Result<String, JsValue> {
 pub fn mermaid_source(kind: &str, payload: &str) -> Result<String, JsValue> {
     let payload = parse_json(payload)?;
     let source = match kind {
-        "opencode" | "sequence-opencode" => mermaid::opencode_build_mermaid(&mermaid::opencode_sequence_units(
-            payload
-                .as_array()
-                .ok_or_else(|| JsValue::from_str("events must be an array"))?,
-        )),
+        "opencode" | "sequence-opencode" => {
+            mermaid::opencode_build_mermaid(&mermaid::opencode_sequence_units(
+                payload
+                    .as_array()
+                    .ok_or_else(|| JsValue::from_str("events must be an array"))?,
+            ))
+        }
         "claude_code" | "sequence-claude" => mermaid::claude_build_mermaid(
             &mermaid::claude_mermaid_units(
                 payload
@@ -91,11 +97,13 @@ pub fn mermaid_source(kind: &str, payload: &str) -> Result<String, JsValue> {
             ),
             false,
         ),
-        "gemini" | "sequence-gemini" => mermaid::gemini_build_mermaid(&mermaid::gemini_sequence_steps(
-            payload
-                .as_array()
-                .ok_or_else(|| JsValue::from_str("events must be an array"))?,
-        )),
+        "gemini" | "sequence-gemini" => {
+            mermaid::gemini_build_mermaid(&mermaid::gemini_sequence_steps(
+                payload
+                    .as_array()
+                    .ok_or_else(|| JsValue::from_str("events must be an array"))?,
+            ))
+        }
         "workflow-reactflow" => mermaid::dag_mermaid(&payload),
         "workflow-tree" => {
             let result = serde_json::from_value(payload)

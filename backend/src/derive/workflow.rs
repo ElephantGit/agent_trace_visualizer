@@ -293,13 +293,14 @@ mod tests {
 
     #[test]
     fn claude_workflow_root_shape() {
-        let result = crate::parsers::claude_code::parse(
-            &std::fs::read(format!(
-                "{}/tests/fixtures/sample_claude_code_transcript.jsonl",
-                env!("CARGO_MANIFEST_DIR")
-            ))
-            .unwrap(),
-        );
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let local = manifest.join("tests/fixtures/sample_claude_code_transcript.jsonl");
+        let fixture = if local.exists() {
+            local
+        } else {
+            manifest.join("../../backend/tests/fixtures/sample_claude_code_transcript.jsonl")
+        };
+        let result = crate::parsers::claude_code::parse(&std::fs::read(fixture).unwrap());
         let root = build_workflow(&result).expect("workflow root");
         assert!(root.is_root);
         assert_eq!(root.state, "completed");

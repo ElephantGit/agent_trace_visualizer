@@ -1094,13 +1094,18 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn fixture_path(name: &str) -> std::path::PathBuf {
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let local = manifest.join("tests/fixtures").join(name);
+        if local.exists() {
+            local
+        } else {
+            manifest.join("../../backend/tests/fixtures").join(name)
+        }
+    }
+
     fn fixture(name: &str) -> Vec<Value> {
-        let bytes = std::fs::read(format!(
-            "{}/tests/fixtures/{}",
-            env!("CARGO_MANIFEST_DIR"),
-            name
-        ))
-        .unwrap();
+        let bytes = std::fs::read(fixture_path(name)).unwrap();
         crate::util::load_ndjson(&bytes)
     }
 
@@ -1161,11 +1166,7 @@ mod tests {
 
     #[test]
     fn gemini_mermaid_steps_and_render() {
-        let bytes = std::fs::read(format!(
-            "{}/tests/fixtures/sample_gemini.log",
-            env!("CARGO_MANIFEST_DIR")
-        ))
-        .unwrap();
+        let bytes = std::fs::read(fixture_path("sample_gemini.log")).unwrap();
         let result = crate::parsers::gemini::parse(&bytes);
         let steps = gemini_sequence_steps(&result.raw_events);
         // api_call x2 (gen_ai.client.request) + tool_call x2 (gemini_cli.tool_call
@@ -1198,11 +1199,7 @@ mod tests {
     #[test]
     fn tree_mermaid_uses_state_colors() {
         let result = crate::parsers::claude_code::parse(
-            &std::fs::read(format!(
-                "{}/tests/fixtures/sample_claude_code_transcript.jsonl",
-                env!("CARGO_MANIFEST_DIR")
-            ))
-            .unwrap(),
+            &std::fs::read(fixture_path("sample_claude_code_transcript.jsonl")).unwrap(),
         );
         let src = workflow_tree_mermaid(&result).expect("tree");
         assert!(src.starts_with("flowchart TD"));
