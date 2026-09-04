@@ -18,16 +18,21 @@ import { useQuery } from '@tanstack/react-query'
 type PageMode = 'live' | 'file'
 type LoadMode = 'browse' | 'upload'
 
-export default function OpencodeView() {
+export default function OpencodeView({ initialLivePath }: { initialLivePath?: string } = {}) {
   const [pageMode, setPageMode] = useState<PageMode>('live')
   const [loadMode, setLoadMode] = useState<LoadMode>('browse')
   const [content, setContent] = useState<ArrayBuffer | null>(null)
   const [name, setName] = useState('')
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [livePath, setLivePath] = useState<string | null>(null)
+  const [livePath, setLivePath] = useState<string | null>(initialLivePath ?? null)
   const [liveError, setLiveError] = useState<string | null>(null)
 
   const startLive = async () => {
+    if (initialLivePath) {
+      setLiveError(null)
+      setLivePath(initialLivePath)
+      return
+    }
     try {
       const latest = await api.liveLatest('opencode')
       setLiveError(null)
@@ -76,7 +81,7 @@ export default function OpencodeView() {
       <aside className="sidebar">
         {/* 上半部：Live / 会话列表模式切换 + 说明（内容可滚动） */}
         <div className="sidebar-main">
-          <Link className="btn" to="/">← 返回选择页</Link>
+          <Link className="btn" to="/landing">← 返回选择页</Link>
           <hr />
           <h3>Opencode</h3>
           {/* 模式切换：默认实时监控 */}
@@ -107,10 +112,6 @@ export default function OpencodeView() {
             <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
           )}
           {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
-          <hr />
-          <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
-            📊 Trajectory 数据搜集
-          </Link>
         </div>
         {/* 下半部：agent 切换（常驻底部） */}
         <AgentSwitcher />
@@ -118,7 +119,12 @@ export default function OpencodeView() {
       <div className="main" id="main">
         {pageMode === 'live' ? (
           livePath ? (
-            <LiveMonitor path={livePath} agent="opencode" onExit={enterFile} />
+            <LiveMonitor
+              path={livePath}
+              agent="opencode"
+              onExit={enterFile}
+              initialAutoFollow={!initialLivePath}
+            />
           ) : liveError ? (
             <div>
               <Info>未找到正在进行的会话（opencode trace 目录下没有最近活跃的 ndjson 文件）。</Info>

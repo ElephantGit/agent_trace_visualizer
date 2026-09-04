@@ -17,16 +17,21 @@ import { useQuery } from '@tanstack/react-query'
 type PageMode = 'live' | 'file'
 type LoadMode = 'browse' | 'upload'
 
-export default function ClaudeCodeView() {
+export default function ClaudeCodeView({ initialLivePath }: { initialLivePath?: string } = {}) {
   const [pageMode, setPageMode] = useState<PageMode>('live')
   const [loadMode, setLoadMode] = useState<LoadMode>('browse')
   const [content, setContent] = useState<ArrayBuffer | null>(null)
   const [name, setName] = useState('')
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [livePath, setLivePath] = useState<string | null>(null)
+  const [livePath, setLivePath] = useState<string | null>(initialLivePath ?? null)
   const [liveError, setLiveError] = useState<string | null>(null)
 
   const startLive = async () => {
+    if (initialLivePath) {
+      setLiveError(null)
+      setLivePath(initialLivePath)
+      return
+    }
     try {
       const latest = await api.liveLatest()
       setLiveError(null)
@@ -75,7 +80,7 @@ export default function ClaudeCodeView() {
       <aside className="sidebar">
         {/* 上半部：Live / 会话列表模式切换 + 说明（内容可滚动） */}
         <div className="sidebar-main">
-          <Link className="btn" to="/">← 返回选择页</Link>
+          <Link className="btn" to="/landing">← 返回选择页</Link>
           <hr />
           <h3>Claude Code</h3>
           {/* 模式切换：默认实时监控 */}
@@ -105,10 +110,6 @@ export default function ClaudeCodeView() {
             <p className="muted">加载本地 trace 文件进行事后分析，文件选择在主区域。</p>
           )}
           {error && pageMode === 'file' && <ErrorBanner>{String(error)}</ErrorBanner>}
-          <hr />
-          <Link className="btn" style={{ width: '100%', textAlign: 'center' }} to="/trajectory">
-            📊 Trajectory 数据搜集
-          </Link>
         </div>
         {/* 下半部：agent 切换（常驻底部） */}
         <AgentSwitcher />
@@ -116,7 +117,12 @@ export default function ClaudeCodeView() {
       <div className="main" id="main">
         {pageMode === 'live' ? (
           livePath ? (
-            <LiveMonitor path={livePath} agent="claude_code" onExit={enterFile} />
+            <LiveMonitor
+              path={livePath}
+              agent="claude_code"
+              onExit={enterFile}
+              initialAutoFollow={!initialLivePath}
+            />
           ) : liveError ? (
             <div>
               <Info>未找到正在进行的会话（~/.claude/projects 下没有最近活跃的 transcript）。</Info>

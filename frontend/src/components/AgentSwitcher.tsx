@@ -1,4 +1,4 @@
-// Agent 切换器——固定在各可视化页面左下角，快速在三个 agent 之间切换
+// Agent 切换器——固定在各可视化页面左下角，快速在支持的 agent 之间切换
 // （原入口在 landing 页，现下沉到每个页面）。
 
 import { Link, useLocation } from 'react-router-dom'
@@ -6,7 +6,6 @@ import { Link, useLocation } from 'react-router-dom'
 const AGENTS = [
   { path: '/claude-code', label: 'Claude Code', icon: '🤖' },
   { path: '/opencode', label: 'Opencode', icon: '⚡' },
-  { path: '/gemini', label: 'Gemini', icon: '💎' },
 ] as const
 
 export default function AgentSwitcher() {

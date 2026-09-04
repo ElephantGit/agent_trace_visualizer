@@ -1,0 +1,20 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@zip-js/zip-js@^2.8.61": "2.8.61"
+  },
+  "jsr": {
+    "@zip-js/zip-js@2.8.61": {
+      "integrity": "8da37318aeefa76faa915058722ab8d1ee51e068edc8be69ea0810e01d724955"
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@zip-js/zip-js@^2.8.61"
+    ],
+    "links": {
+      "jsr:@ora-space/plugin-sdk@0.8.0": {},
+      "npm:@ora-space/plugin-sdk@0.8.0": {}
+    }
+  }
+}

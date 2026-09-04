@@ -18,6 +18,14 @@ backend/target/
 # Node / frontend
 frontend/node_modules/
 frontend/dist/
+frontend/public/wasm/
+frontend/src/generated/
+
+# Ora workbench build output
+plugin/assets/
+plugin/dist/
+plugin/main.js
+plugin/wasm/target/
 
 # OS / editor
 .DS_Store

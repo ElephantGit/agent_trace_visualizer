@@ -1,4 +1,4 @@
-// Landing page — hero + four mode cards (mirrors legacy app.py).
+// Landing page — hero + supported mode cards (mirrors legacy app.py).
 // Card CTA texts are load-bearing: e2e.mjs clicks them by text.
 
 import { Link } from 'react-router-dom'
@@ -32,17 +32,6 @@ const CARDS: {
         <rect x="3" y="4.5" width="7" height="3.5" rx="1.6" />
         <rect x="13.5" y="10.25" width="7.5" height="3.5" rx="1.6" />
         <rect x="6.5" y="16" width="5.5" height="3.5" rx="1.6" />
-      </svg>
-    ),
-  },
-  {
-    to: '/gemini',
-    title: 'Gemini CLI',
-    desc: '`GEMINI_TELEMETRY_TRACES_ENABLED` 生成的 telemetry.log',
-    cta: 'Gemini CLI 可视化',
-    glyph: (
-      <svg {...GLYPH_PROPS}>
-        <path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9L12 3.5z" />
       </svg>
     ),
   },

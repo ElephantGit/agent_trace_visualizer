@@ -100,6 +100,32 @@ export interface TraceEntry {
   agent?: string
 }
 
+export interface ReplayStep {
+  seq: number
+  category: string
+  title: string
+  content: string
+  detail: Record<string, unknown>
+  turn_no: number
+  is_error: boolean
+}
+
+export interface CategoryStyle {
+  label: string
+  icon: string
+  bg: string
+  header_bg: string
+  border: string
+  text: string
+}
+
+export interface ReplayResponse {
+  steps: ReplayStep[]
+  pageSize: number
+  contentMaxLength: number
+  categories: [string, CategoryStyle][]
+}
+
 export interface MermaidResponse {
   src: string
   totalUnits: number

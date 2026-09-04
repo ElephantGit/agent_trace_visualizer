@@ -1,0 +1,22 @@
+{
+  "name": "@ora-space/agent-dashboard",
+  "version": "0.2.10",
+  "exports": "./src/main.ts",
+  "imports": {
+    "@ora-space/plugin-sdk": "../../desktop/packages/plugin-sdk/src/mod.ts",
+    "@zip-js/zip-js": "jsr:@zip-js/zip-js@^2.8.61"
+  },
+  "tasks": {
+    "check": "deno check src/main.ts",
+    "lint": "deno lint src",
+    "format": "deno fmt src deno.json package.json README.md",
+    "build:wasm": "bash wasm/build.sh",
+    "build:web": "cd ../frontend && npm run build",
+    "build": "deno task build:wasm && deno task build:web && deno bundle src/main.ts -o main.js",
+    "package": "deno task build && deno run --allow-read --allow-write scripts/package.ts"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.ns", "dom", "esnext"]
+  }
+}

@@ -20,13 +20,15 @@ export default function LiveMonitor({
   path: initialPath,
   agent,
   onExit,
+  initialAutoFollow = true,
 }: {
   path: string
   agent: LiveAgent
   onExit: () => void
+  initialAutoFollow?: boolean
 }) {
-  const { rawEvents, result, status, paused, path, autoFollow, follow, followLatest, pause, resume } =
-    useLiveStream(initialPath, agent)
+  const { rawEvents, result, status, paused, error, path, autoFollow, follow, followLatest, pause, resume } =
+    useLiveStream(initialPath, agent, initialAutoFollow)
   const model = useMemo(
     () => (agent === 'opencode' ? buildTimelineOpencode(rawEvents) : buildTimeline(rawEvents)),
     [agent, rawEvents],
@@ -85,7 +87,9 @@ export default function LiveMonitor({
           : '已固定监控上方选中的会话；可切回「🔄 自动跟随最新会话」。'}
       </p>
       {status === 'loading' && <p className="muted">正在加载会话内容…</p>}
-      {status === 'error' && <p className="muted">会话加载失败，请检查文件是否存在。</p>}
+      {status === 'error' && (
+        <p className="muted">会话加载失败：{error ?? '未知错误'}</p>
+      )}
       {body}
     </div>
   )

@@ -1,0 +1,7 @@
+{
+  "name": "@ora-space/agent-dashboard",
+  "version": "0.2.11",
+  "description": "Ora workbench plugin for agent trace visualisation.",
+  "type": "module",
+  "license": "Apache-2.0"
+}

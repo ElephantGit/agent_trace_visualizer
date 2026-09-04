@@ -3,19 +3,13 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Workbench assets are served from the plugin package rather than a web server.
+  base: './',
+  publicDir: 'public',
   plugins: [react()],
-  server: {
-    port: 5173,
-    // Dev: forward API calls to the Rust backend (127.0.0.1:8601 — the same
-    // port the legacy Streamlit app used, kept for the Ora iframe contract).
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8601',
-        changeOrigin: false,
-      },
-    },
-  },
   build: {
+    outDir: '../plugin/assets',
+    emptyOutDir: true,
     // Keep the heavy chart/diagram libraries out of the initial bundle.
     rolldownOptions: {
       output: {

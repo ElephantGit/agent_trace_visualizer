@@ -1,0 +1,20 @@
+[package]
+name = "agent-dashboard-wasm"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+encoding_rs = "0.8"
+rand = "0.8"
+tiktoken-rs = "0.9"
+# `rand` is used by the original sampling implementation. Its transitive browser entropy
+# provider must opt into the Web Crypto bridge for wasm32-unknown-unknown.
+getrandom = { version = "0.2", features = ["js"] }

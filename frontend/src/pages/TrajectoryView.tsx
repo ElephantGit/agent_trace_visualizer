@@ -53,7 +53,6 @@ export default function TrajectoryView() {
           <h3>📊 Trajectory 数据搜集</h3>
           <p className="muted">
             聚合当前用户所有本地 agent（Claude Code / Opencode）的会话，支持筛选与搜索。
-            Gemini 的 telemetry 为手动上传日志，无本地目录可自动收集。
           </p>
           {merged.isError && <ErrorBanner>{String(merged.error)}</ErrorBanner>}
         </div>

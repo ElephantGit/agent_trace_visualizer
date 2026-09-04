@@ -19,7 +19,6 @@ type StatusFilter = 'all' | 'active' | 'ended'
 const AGENT_LABELS: Record<string, string> = {
   claude_code: 'Claude Code',
   opencode: 'Opencode',
-  gemini: 'Gemini',
 }
 
 function fmtTime(ms: number): string {

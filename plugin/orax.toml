@@ -1,0 +1,12 @@
+resolver = 1
+title = "Agent Dashboard"
+identifier = "ora-space.agent-dashboard"
+namespace = "official"
+kind = "workbench"
+version = "0.2.11"
+description = "Session-scoped agent trace dashboard for Ora"
+homepage = "https://github.com/ora-space/agent-trace-visualizer"
+license = "Apache-2.0"
+
+[workbench]
+methods = ["dashboard/list", "dashboard/stat", "dashboard/read"]
